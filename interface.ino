@@ -4,10 +4,11 @@ void interface(char *buffer) {
   double val;
 
   cmd = buffer[0];  
-
+  uint8_t msg_buffer[4] = {ICC_WRITE_DATA, 39, 6, 9};
   switch (cmd) {
     case 'c':
-      std::sscanf(buffer, "%s %s %d %lf", &cmd, &subcmd, &i, &val);
+      rp2040.fifo.push_nb(*((uint32_t*) msg_buffer));
+      std::sscanf(buffer, "%c %c %d %lf", &cmd, &subcmd, &i, &val);
       if (LUMINAIRE == i) {
         switch (subcmd) {
           case 'k': /* Change gain K at luminaire i controller */
@@ -44,7 +45,7 @@ void interface(char *buffer) {
       break;    
 
     case 'd': /* Set directly the duty cycle of the LED at luminaire i */
-      std::sscanf(buffer, "%s %d %lf", &cmd, &i, &val);
+      std::sscanf(buffer, "%c %d %lf", &cmd, &i, &val);
       if (LUMINAIRE == i) {
         serial_duty_cycle = val;
         analogWrite(LED_PIN, serial_duty_cycle * DAC_RANGE);
@@ -53,7 +54,7 @@ void interface(char *buffer) {
       break;
 
     case 'g':
-      std::sscanf(buffer, "%s %s %d", &cmd, &subcmd, &i);
+      std::sscanf(buffer, "%c %c %d", &cmd, &subcmd, &i);
       switch (subcmd) {
         case 'd': /* Get current duty cycle at luminaire i */
           if (LUMINAIRE == i)
@@ -119,7 +120,7 @@ void interface(char *buffer) {
           break;  
         
         case 'b': /* Get last minute buffer of variable <x> of desk <i>. <x> can be “l” or “d”. */
-          std::sscanf(buffer, "%s %s %s %d", &cmd, &subcmd, &x, &i);
+          std::sscanf(buffer, "%c %c %c %d", &cmd, &subcmd, &x, &i);
           if (LUMINAIRE == i) {
             switch (x) {
               case 'l':
@@ -160,7 +161,7 @@ void interface(char *buffer) {
     break;
 
     case 'r': /* Set illuminance reference at luminaire i */
-      std::sscanf(buffer, "%s %d %lf", &cmd, &i, &val);
+      std::sscanf(buffer, "%c %d %lf", &cmd, &i, &val);
       if (LUMINAIRE == i) {
         r = val;
         Serial.println("ack");
@@ -170,7 +171,7 @@ void interface(char *buffer) {
       break;
 
     case 'o': /* Set current occupancy state at desk <i> */
-      std::sscanf(buffer, "%s %d %lf", &cmd, &i, &val);
+      std::sscanf(buffer, "%c %d %lf", &cmd, &i, &val);
       if (LUMINAIRE == i) {
         controller.set_occupancy(val);
         Serial.println("ack");
@@ -180,7 +181,7 @@ void interface(char *buffer) {
       break;
 
     case 'a': /* Set anti-windup state at desk <i> */
-      std::sscanf(buffer, "%s %d %lf", &cmd, &i, &val);
+      std::sscanf(buffer, "%c %d %lf", &cmd, &i, &val);
       if (LUMINAIRE == i) {
         controller.set_anti_windup(val);
         Serial.println("ack");
@@ -190,7 +191,7 @@ void interface(char *buffer) {
       break;
 
     case 'k': /* Set feedback on/off at desk <i> */
-      std::sscanf(buffer, "%s %d %lf", &cmd, &i, &val);
+      std::sscanf(buffer, "%c %d %lf", &cmd, &i, &val);
       if (LUMINAIRE == i) {
         serial_duty_cycle = controller.get_u() / DAC_RANGE;
         controller.set_feedback(val);
@@ -201,7 +202,7 @@ void interface(char *buffer) {
       break;
 
     case 's': /* Start stream of real-time variable <x> of desk <i>. <x> can be “l”, “d” or "j". */
-      std::sscanf(buffer, "%s %s %d", &cmd, &x, &i);
+      std::sscanf(buffer, "%c %c %d", &cmd, &x, &i);
       if (LUMINAIRE == i) {
         if (x == 'l')
           stream_l = 1;
@@ -213,7 +214,7 @@ void interface(char *buffer) {
       break;    
     
     case 'S': /* Stop stream of real-time variable <x> of desk <i>. <x> can be “l”, “d” or "j". */
-      std::sscanf(buffer, "%s %s %d", &cmd, &x, &i);
+      std::sscanf(buffer, "%c %c %d", &cmd, &x, &i);
       if (LUMINAIRE == i) {
         if (x == 'l')
           stream_l = 0;
@@ -226,7 +227,7 @@ void interface(char *buffer) {
       break;  
 
     case 'v': /* Visualization with serial plotter */
-      std::sscanf(buffer, "%s %d", &cmd, &i);
+      std::sscanf(buffer, "%c %d", &cmd, &i);
       if (LUMINAIRE == i) {
         visualization = !visualization;
         Serial.println("ack");
@@ -236,7 +237,7 @@ void interface(char *buffer) {
       break;
     
     case 'm': /* Set mode of operation */
-      std::sscanf(buffer, "%s %s %d", &cmd, &subcmd, &i);
+      std::sscanf(buffer, "%c %c %d", &cmd, &subcmd, &i);
       if (LUMINAIRE == i)
         controller.set_modeOp(subcmd, i);
       Serial.println("ack");

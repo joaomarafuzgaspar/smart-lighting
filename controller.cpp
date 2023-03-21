@@ -5,21 +5,21 @@ const int DAC_RANGE = 4096;
 
 void Controller::set_controller(int LUMINAIRE) {
 
-  if (LUMINAIRE == 1) {
+  if (LUMINAIRE == 33) {
     /* 1st Luminaire */
     _K = 5.0;
     _Ti = 250.0;
     _b = 7.0;
     _Tt = 100.0;
   }
-  else if (LUMINAIRE == 2) {
+  else if (LUMINAIRE == 38) {
     /* 2nd Luminaire */
     _K = 7.5;
     _Ti = 200.0;
     _b = 7.0;
     _Tt = 100.0;
   }
-  else if (LUMINAIRE == 3) {
+  else if (LUMINAIRE == 39) {
     /* 3rd Luminaire */
     _K = 7.5;
     _Ti = 300.0;
@@ -102,23 +102,23 @@ void Controller::set_modeOp(char subcmd, int i) {
 
   switch (subcmd) {
     case 'l':
-      if (i == 1 || i == 2)
+      if (i == 33 || i == 38)
         _K = 5.0, _b = 7.0;
       if (i == 3)
         _K = 5.0, _b = 5.0;
       break;
 
     case 'm':
-      if (i == 1)
+      if (i == 33)
         _K = 5.0, _b = 7.0;
-      if (i == 2 || i == 3)
+      if (i == 38 || i == 39)
         _K = 7.5, _b = 7.0;        
       break;
 
     case 'h':
-      if (i == 1 || i == 3)
+      if (i == 33 || i == 39)
         _K = 10.0, _b = 10.0;
-      if (i == 2)
+      if (i == 38)
         _K = 15.0, _b = 10.0;
       break;
         

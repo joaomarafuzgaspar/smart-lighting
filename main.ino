@@ -1,4 +1,7 @@
 #include <sstream>
+#include <set>
+#include <hardware/flash.h>
+#include "mcp2515.h"
 #include "quickselect.h"
 #include "controller.h"
 #include "circular_buffer.h"
@@ -11,6 +14,7 @@ const int DAC_RANGE = 4096;
 const int DAC_BITS = 12;
 const int LED_PIN = 15;
 const int ADC_PIN = A0;
+const unsigned long PING_TIMER = 5000;
 const double Vcc = 3.3;
 const double MAXIMUM_POWER = 2.65 * 5.8e-3;
 const int sampInterval = 10;
@@ -23,7 +27,16 @@ const int MEDIAN_FILTER_SIZE = 5;
 int last_measurements[MEDIAN_FILTER_SIZE] = {1, 1, 1, 1, 1};
 
 // Luminaire ID
-const int LUMINAIRE = 3;
+uint8_t LUMINAIRE;
+
+enum inter_core_cmds {
+  //From core1 to core0: contains data read (16 bit)
+  ICC_READ_DATA = 1,
+  // From core0 to core1: contains data to write (16 bit)
+  ICC_WRITE_DATA = 2,
+  // From core1 to core0: contains regs CANINTF, EFLG
+  ICC_ERROR_DATA = 3
+};
 
 // Globals
 int counter = 0;
@@ -50,7 +63,9 @@ int buffer_read_size = 0;
 int buffer_read_counter = 0;
 double serial_duty_cycle = 0;
 int visualization = 0;
-
+MCP2515 can0 {spi0, 17, 19, 16, 18, 10000000};
+std::set<uint8_t> other_luminaires;
+unsigned long time_since_last_ping = 0;
 
 double adc2resistance(int adc_value)
 {
@@ -105,6 +120,12 @@ double calibrate_gain() {
 }
 
 void setup() {
+  uint8_t pico_flash_id[8];
+  rp2040.idleOtherCore();
+  flash_get_unique_id(pico_flash_id);
+  rp2040.resumeOtherCore();
+  LUMINAIRE = pico_flash_id[7];  
+  
   Serial.begin(115200);
   analogReadResolution(DAC_BITS);
   analogWriteRange(DAC_RANGE);
@@ -112,14 +133,48 @@ void setup() {
   controller.set_controller(LUMINAIRE);
 
   // Box gain calibration
-  box_gain = calibrate_gain();
+  // box_gain = calibrate_gain();
   Serial.printf("Box gain: %lf\n", box_gain);
+  time_since_last_ping = millis();
+}
+
+void setup1() {
+  uint8_t pico_flash_id[8];
+  rp2040.idleOtherCore();
+  flash_get_unique_id(pico_flash_id);
+  rp2040.resumeOtherCore();
+  LUMINAIRE = pico_flash_id[7];  
+  
+  can0.reset();
+  can0.setBitrate(CAN_1000KBPS);
+  can0.setFilterMask(MCP2515::MASK0, 0, 0x000000ff);
+  can0.setFilter(MCP2515::RXF0, 0, 0);
+  can0.setFilter(MCP2515::RXF1, 0, LUMINAIRE);
+  can0.setFilterMask(MCP2515::MASK1, 0, 0x000000ff);
+  can0.setFilter(MCP2515::RXF2, 0, 0);
+  can0.setFilter(MCP2515::RXF3, 0, LUMINAIRE);
+  can0.setNormalMode();
 }
 
 void serial_command() {
   const int BUFFER_SIZE = 128;
   static char buffer[BUFFER_SIZE];
   static int buffer_pos = 0;
+
+  uint8_t bytes[4];  
+  while (rp2040.fifo.available()) {
+    rp2040.fifo.pop_nb((uint32_t*) bytes);
+    Serial.print("Received msg: ");
+    Serial.println(*((uint8_t*) bytes));
+    if (bytes[0] == 0) {
+      Serial.print("Got ping message from ");
+      Serial.print(bytes[1]);
+      if (other_luminaires.insert(bytes[1]).second)
+        Serial.println(", inserted as new");
+      else
+        Serial.println();
+    }
+  }
   
   while (Serial.available() > 0) {
     char c = Serial.read();
@@ -245,4 +300,45 @@ void loop() {
   }
 
   last_run = current_run;
+
+  unsigned long current_time = millis();
+  uint8_t ping_msg[4] = {ICC_WRITE_DATA, 0, 0, 0};
+  if (current_time - time_since_last_ping > PING_TIMER) {
+    time_since_last_ping = current_time;
+    rp2040.fifo.push_nb(*((uint32_t*) ping_msg));
+  }
+}
+
+void can_frame_to_bytes(can_frame *frm, uint8_t b[4]) {
+  b[0] = frm->can_id; b[1] = frm->data[2];
+  b[2] = frm->data[1]; b[3] = frm->data[0];
+}
+
+void loop1() {
+  can_frame frm;
+  uint8_t bytes[4];
+
+  uint8_t irq = can0.getInterrupts();
+  if (irq & MCP2515::CANINTF_RX0IF) {
+    can0.readMessage(MCP2515::RXB0, &frm);
+    can_frame_to_bytes(&frm, bytes);
+    rp2040.fifo.push_nb(*((uint32_t*) bytes));
+  }
+  if (irq & MCP2515::CANINTF_RX1IF) {
+    can0.readMessage(MCP2515::RXB1, &frm);
+    can_frame_to_bytes(&frm, bytes);
+    rp2040.fifo.push_nb(*((uint32_t*) bytes));
+  }  
+
+  if (rp2040.fifo.pop_nb((uint32_t*)bytes)) {
+    if (bytes[0] == ICC_WRITE_DATA) {
+      frm.can_id = bytes[1];
+      frm.can_dlc = 3;
+      frm.data[0] = bytes[2];
+      frm.data[1] = bytes[3];
+      frm.data[2] = LUMINAIRE;
+      can0.sendMessage(&frm);
+    }
+  }
+
 }
