@@ -1,0 +1,248 @@
+#include <sstream>
+#include "quickselect.h"
+#include "controller.h"
+#include "circular_buffer.h"
+
+
+#define DIFFERENCE(a, b) ((a) > (b) ? (a) - (b):(b) - (a))
+
+// Constants
+const int DAC_RANGE = 4096;
+const int DAC_BITS = 12;
+const int LED_PIN = 15;
+const int ADC_PIN = A0;
+const double Vcc = 3.3;
+const double MAXIMUM_POWER = 2.65 * 5.8e-3;
+const int sampInterval = 10;
+
+const int R = 10e3;
+const double b = 6.1521825181113625;
+const double m = -0.8;
+
+const int MEDIAN_FILTER_SIZE = 5;
+int last_measurements[MEDIAN_FILTER_SIZE] = {1, 1, 1, 1, 1};
+
+// Luminaire ID
+const int LUMINAIRE = 3;
+
+// Globals
+int counter = 0;
+double box_gain;
+std::stringstream command_ss;
+char command_buffer[64] = "";
+Controller controller;
+int incomingByte = 0;
+double r = 0;
+double lux_value;
+double duty_cycle = 0.0;
+int iteration_counter = 0;
+double energy = 0.0;
+double visibility_error = 0.0;
+double flicker_error = 0.0;
+double prev_duty_cycle_1 = 0.0;
+double prev_duty_cycle_2 = 0.0;
+int stream_l = 0, stream_d = 0, stream_j = 0;
+CircularBuffer<6000> last_minute_buffer;
+buffer_data data;
+int buffer_d = 0;
+int buffer_l = 0;
+int buffer_read_size = 0;
+int buffer_read_counter = 0;
+double serial_duty_cycle = 0;
+int visualization = 0;
+
+
+double adc2resistance(int adc_value)
+{
+  /* V_ADC = adc_value / DAC_RANGE * VCC; R_LDR = VCC / V_ADC * R - R */
+  return R * (DAC_RANGE / ((double) adc_value) - 1);
+}
+
+double resistance2lux(double R_LDR)
+{
+  return pow(10, (log10(R_LDR) - b) / m);
+}
+
+double adc2lux(int adc_value)
+{
+  return resistance2lux(adc2resistance(adc_value));
+}
+
+void write_into_filter(int value)
+{
+  memmove(last_measurements, last_measurements + 1, sizeof(int) * 4);
+  last_measurements[4] = value;
+}
+
+int read_from_filter()
+{
+  static int buffer[MEDIAN_FILTER_SIZE];
+  memcpy(buffer, last_measurements, sizeof(last_measurements));
+  return quick_select(buffer, MEDIAN_FILTER_SIZE);
+}
+
+/* Get box gain to then compute the external luminance */
+double calibrate_gain() {
+  double u1 = 0, u2 = 1, y1, y2;
+
+  analogWrite(LED_PIN, 0);
+  delay(5000);
+  Serial.println("Starting calibration, please wait ~12 seconds...");
+
+  // LED turned off
+  y1 = adc2lux(analogRead(ADC_PIN));
+  // Serial.printf("For u = %lf, we get y = %lf\n", u1, y1);
+  delay(1000);
+
+  // LED turned on
+  analogWrite(LED_PIN, DAC_RANGE);
+  delay(10000);
+  y2 = adc2lux(analogRead(ADC_PIN));
+  // Serial.printf("For u = %lf, we get y = %lf\n", u2, y2);
+  delay(1000);
+
+  return (y2 - y1) / (u2 - u1);
+}
+
+void setup() {
+  Serial.begin(115200);
+  analogReadResolution(DAC_BITS);
+  analogWriteRange(DAC_RANGE);
+  analogWriteFreq(60000); 
+  controller.set_controller(LUMINAIRE);
+
+  // Box gain calibration
+  box_gain = calibrate_gain();
+  Serial.printf("Box gain: %lf\n", box_gain);
+}
+
+void serial_command() {
+  const int BUFFER_SIZE = 128;
+  static char buffer[BUFFER_SIZE];
+  static int buffer_pos = 0;
+  
+  while (Serial.available() > 0) {
+    char c = Serial.read();
+
+    if (c == '\n') { // Found complete message
+      buffer[buffer_pos] = '\0';
+      interface(buffer);
+      buffer_pos = 0;
+    }
+    else if (buffer_pos < BUFFER_SIZE - 1) {
+      buffer[buffer_pos] = c;
+      buffer_pos++;
+    } 
+    else { // Buffer overflow - reset buffer position
+      buffer_pos = 0;
+      }
+  }
+}
+
+void loop() {
+  static unsigned long last_run = micros();
+  unsigned long current_run = micros();
+
+  unsigned long h = (current_run - last_run) * 1e-3;
+  if (h < sampInterval)
+    return;
+
+  serial_command();
+
+  int adc_value = analogRead(ADC_PIN);
+
+  if (visualization) {
+    write_into_filter(adc_value);
+    lux_value = adc2lux(read_from_filter());
+    // Serial.print(lux_value);
+    // Serial.print(" ");
+    // Serial.print(r);
+    // Serial.println(" 0 50 ");
+    Serial.print(r);
+    Serial.print(" ");
+    Serial.print(lux_value);
+    Serial.print(" ");
+  }
+  else
+    lux_value = adc2lux(adc_value);
+
+
+  double y = lux_value;
+  if (controller.get_feedback()) {
+    int u = (int) controller.get_control_signal(r, lux_value, h);
+    analogWrite(LED_PIN, u);
+    duty_cycle = (double) u / DAC_RANGE;
+  }
+  else 
+    duty_cycle = serial_duty_cycle;
+
+  if (visualization) {
+    Serial.print(duty_cycle);
+    Serial.print(" ");
+    Serial.print(lux_value - box_gain * duty_cycle);
+    Serial.print(" ");
+  }
+
+  /* Performance Metrics/Others */
+  iteration_counter++; // for averaging
+
+  data = {lux_value, duty_cycle};
+  last_minute_buffer.insert_new(data);
+
+  // Energy  
+  energy += MAXIMUM_POWER * duty_cycle * DIFFERENCE(current_run, last_run) * pow(10, -6);
+
+  // Visibility Error (not averaged)
+  visibility_error += max(0, r - lux_value);
+
+  // Flicker Error (not averaged)
+  if (iteration_counter > 2) {
+      if ((duty_cycle - prev_duty_cycle_1) * (prev_duty_cycle_1 - prev_duty_cycle_2) < 0)
+          flicker_error += abs(duty_cycle - prev_duty_cycle_1) + abs(prev_duty_cycle_1 - prev_duty_cycle_2);
+      prev_duty_cycle_2 = prev_duty_cycle_1;
+      prev_duty_cycle_1 = duty_cycle;
+  } 
+  else if (iteration_counter == 2)
+      prev_duty_cycle_1 = duty_cycle;
+  else
+      prev_duty_cycle_2 = duty_cycle;
+
+  if (stream_l)
+    Serial.printf("s l %d %lf %d\n", LUMINAIRE, lux_value, millis());
+
+  if (stream_d)
+    Serial.printf("s d %d %lf %d\n", LUMINAIRE, duty_cycle, millis());
+
+  if (stream_j)
+    Serial.printf("s j %d %lf %d\n", LUMINAIRE, DIFFERENCE(DIFFERENCE(current_run, last_run), sampInterval * pow(10, 3)), millis());
+
+  // Read last minute buffer
+  if (buffer_read_counter < buffer_read_size) {
+    int t = 20;
+
+    if (buffer_read_size - buffer_read_counter < t)
+      t = buffer_read_size - buffer_read_counter;
+
+    for (int i = 0; i < t; i++) {
+      data = last_minute_buffer.remove_oldest();
+
+      if (buffer_l)
+        Serial.printf("%f, ", data.lux_value);
+      
+      if (buffer_d)
+        Serial.printf("%f, ", data.duty_cycle);
+
+      buffer_read_counter++;
+    }
+  }
+  else {
+    if (buffer_d || buffer_l)
+        Serial.println();
+    buffer_d = 0;
+    buffer_l = 0;
+    buffer_read_size = 0;
+    buffer_read_counter = 0;
+  }
+
+  last_run = current_run;
+}
