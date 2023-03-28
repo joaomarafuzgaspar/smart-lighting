@@ -4,10 +4,8 @@ void interface(char *buffer) {
   double val;
 
   cmd = buffer[0];  
-  uint8_t msg_buffer[4] = {ICC_WRITE_DATA, 39, 6, 9};
   switch (cmd) {
     case 'c':
-      rp2040.fifo.push_nb(*((uint32_t*) msg_buffer));
       std::sscanf(buffer, "%c %c %d %lf", &cmd, &subcmd, &i, &val);
       if (LUMINAIRE == i) {
         switch (subcmd) {
@@ -161,13 +159,17 @@ void interface(char *buffer) {
     break;
 
     case 'r': /* Set illuminance reference at luminaire i */
-      std::sscanf(buffer, "%c %d %lf", &cmd, &i, &val);
-      if (LUMINAIRE == i) {
-        r = val;
-        Serial.println("ack");
+      if (std::sscanf(buffer, "%c %d %lf", &cmd, &i, &val) == 3) {
+        if (LUMINAIRE == i) {
+          r = val;
+          Serial.println("ack");
+        }
+        else
+          Serial.println("err");
       }
-      else
-        Serial.println("err");
+      else {
+        master_calibrate_routine();
+      }      
       break;
 
     case 'o': /* Set current occupancy state at desk <i> */
@@ -241,7 +243,7 @@ void interface(char *buffer) {
       if (LUMINAIRE == i)
         controller.set_modeOp(subcmd, i);
       Serial.println("ack");
-      break;
+      break;      
 
     default:
       Serial.println("err -> Invalid Command, please try again.");
