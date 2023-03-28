@@ -106,14 +106,12 @@ double calibrate_gain() {
 
   // LED turned off
   y1 = adc2lux(analogRead(ADC_PIN));
-  // Serial.printf("For u = %lf, we get y = %lf\n", u1, y1);
   delay(1000);
 
   // LED turned on
   analogWrite(LED_PIN, DAC_RANGE);
   delay(10000);
   y2 = adc2lux(analogRead(ADC_PIN));
-  // Serial.printf("For u = %lf, we get y = %lf\n", u2, y2);
   delay(1000);
 
   return (y2 - y1) / (u2 - u1);
@@ -205,24 +203,16 @@ void loop() {
   serial_command();
 
   int adc_value = analogRead(ADC_PIN);
+  write_into_filter(adc_value);
+  lux_value = adc2lux(read_from_filter());
 
   if (visualization) {
-    write_into_filter(adc_value);
-    lux_value = adc2lux(read_from_filter());
-    // Serial.print(lux_value);
-    // Serial.print(" ");
-    // Serial.print(r);
-    // Serial.println(" 0 50 ");
-    Serial.print(r);
-    Serial.print(" ");
     Serial.print(lux_value);
     Serial.print(" ");
+    Serial.print(r);
+    Serial.println(" 0 50 ");
   }
-  else
-    lux_value = adc2lux(adc_value);
 
-
-  double y = lux_value;
   if (controller.get_feedback()) {
     int u = (int) controller.get_control_signal(r, lux_value, h);
     analogWrite(LED_PIN, u);
@@ -230,13 +220,6 @@ void loop() {
   }
   else 
     duty_cycle = serial_duty_cycle;
-
-  if (visualization) {
-    Serial.print(duty_cycle);
-    Serial.print(" ");
-    Serial.print(lux_value - box_gain * duty_cycle);
-    Serial.print(" ");
-  }
 
   /* Performance Metrics/Others */
   iteration_counter++; // for averaging
