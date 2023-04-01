@@ -482,6 +482,7 @@ void calibrate_loop()
       default:
         break;
     }
+    controller.set_feedback(true);
   }
 }
 
