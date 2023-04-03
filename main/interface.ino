@@ -114,6 +114,8 @@ void interface(char *buffer) {
         case 'k': /* Get feedback state at desk <i> */
           if (LUMINAIRE == i)
             Serial.printf("k %d %d\n", LUMINAIRE, controller.get_feedback());
+          else 
+            enqueue_message(i, msg_t::INTERFACE_GET_FEEDBACK, nullptr, 0);
           break;
 
         case 'x': /* Get current external illuminance at desk <i> */
@@ -213,9 +215,8 @@ void interface(char *buffer) {
         controller.set_feedback(val);
         Serial.println("ack");
       }
-      else {
+      else
         enqueue_message(i, msg_t::INTERFACE_SET_FEEDBACK, (uint8_t*) &val, sizeof(val));
-      }
       break;
 
     case 's': /* Start stream of real-time variable <x> of desk <i>. <x> can be “l”, “d” or "j". */

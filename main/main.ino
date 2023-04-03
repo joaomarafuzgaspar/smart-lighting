@@ -93,7 +93,7 @@ enum msg_t : uint8_t {
   INTERFACE_GET_FEEDBACK,
   INTERFACE_VALUE
 };
-char message_type_translations[][10] = {"PING", "OFF", "ON", "CALIBRATE", "ACK", "END"};
+char message_type_translations[][23] = {"PING", "OFF", "ON", "CALIBRATE", "ACK", "END", "INTERFACE_SET_FEEDBACK", "INTERFACE_GET_FEEDBACK", "INTERFACE_VALUE"};
 
 double adc2resistance(int adc_value)
 {
@@ -243,6 +243,11 @@ void serial_command() {
         value = *((double*) data);
         controller.set_feedback((int) value);
         enqueue_message(sender, msg_t::ACK, nullptr, 0);
+        break;
+      case msg_t::INTERFACE_VALUE:
+        //value = *((double*) data);
+        //Serial.printf("k %d %d\n", sender, (int) value);
+        Serial.println("FIXME");
         break;
       default:
         Serial.println("Couldn't decode message");
@@ -498,7 +503,6 @@ void calibrate_loop()
       default:
         break;
     }
-    controller.set_feedback(true);
   }
 }
 
