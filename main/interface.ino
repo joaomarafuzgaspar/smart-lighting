@@ -9,7 +9,7 @@ void interface(char *buffer) {
       std::sscanf(buffer, "%c %c %d %lf", &cmd, &subcmd, &i, &val);
       if (LUMINAIRE == i) {
         switch (subcmd) {
-          case 'k': /* Change gain K at luminaire i controller */
+          case 'k': /* Change gain K at luminaire i controller */            
             controller.set_k(val);
             Serial.println("ack");
             break;
@@ -35,6 +35,20 @@ void interface(char *buffer) {
             Serial.printf("Box gain: %lf\n", box_gain);
             break;
             
+          default:
+            Serial.println("err -> Invalid Command, please try again.");
+            return; 
+        }
+      }
+      else {
+        switch (subcmd) {
+          case 'k': /* Change gain K at luminaire i controller */
+            enqueue_message(i, msg_t::INTERFACE_GET_FEEDBACK, nullptr, 0);
+            break;
+          case 'i': /* Change time constant Ti at luminaire i controller */
+          case 'b': /* Change gain b at luminaire i controller */
+          case 't': /* Change time constant Tt at luminaire i controller */
+          case 'r': /* Re-calibrate box gain */
           default:
             Serial.println("err -> Invalid Command, please try again.");
             return; 
@@ -199,8 +213,9 @@ void interface(char *buffer) {
         controller.set_feedback(val);
         Serial.println("ack");
       }
-      else
-        Serial.println("err");
+      else {
+        enqueue_message(i, msg_t::INTERFACE_SET_FEEDBACK, (uint8_t*) &val, sizeof(val));
+      }
       break;
 
     case 's': /* Start stream of real-time variable <x> of desk <i>. <x> can be “l”, “d” or "j". */

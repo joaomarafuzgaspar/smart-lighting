@@ -88,7 +88,10 @@ enum msg_t : uint8_t {
   ON,
   CALIBRATE,
   ACK,
-  END
+  END,
+  INTERFACE_SET_FEEDBACK,
+  INTERFACE_GET_FEEDBACK,
+  INTERFACE_VALUE
 };
 char message_type_translations[][10] = {"PING", "OFF", "ON", "CALIBRATE", "ACK", "END"};
 
@@ -198,6 +201,7 @@ void serial_command() {
     else if (message_type != msg_t::PING)
       Serial.printf("Received message of unknown type (%d) from %d\n", message_type, sender);
     
+    double value = 0;
     switch (message_type) {
       case msg_t::PING:
         if (other_luminaires.insert(sender).second)
@@ -226,7 +230,19 @@ void serial_command() {
         start_calibrate_routine(sender);
         break;
       case msg_t::ACK:
-        ready_luminaires.insert(sender);
+        if (is_calibrating && is_calibrating_as_master) 
+          ready_luminaires.insert(sender);
+        else
+          Serial.printf("ack from %d\n", sender);
+        break;
+      case msg_t::INTERFACE_GET_FEEDBACK:
+        value = (double) controller.get_feedback();
+        enqueue_message(sender, msg_t::INTERFACE_VALUE, (uint8_t*) &value, sizeof(value));
+        break;
+      case msg_t::INTERFACE_SET_FEEDBACK:
+        value = *((double*) data);
+        controller.set_feedback((int) value);
+        enqueue_message(sender, msg_t::ACK, nullptr, 0);
         break;
       default:
         Serial.println("Couldn't decode message");
