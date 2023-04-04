@@ -1,5 +1,8 @@
 #include <sstream>
 #include <set>
+#include <map>
+#include <numeric>
+#include <algorithm>
 #include <hardware/flash.h>
 #include "mcp2515.h"
 #include "quickselect.h"
@@ -7,6 +10,7 @@
 #include "circular_buffer.h"
 
 #define DIFFERENCE(a, b) ((a) > (b) ? (a) - (b) : (b) - (a))
+#define BROADCAST 0
 
 // Constants
 const int DAC_RANGE = 4096;
@@ -17,7 +21,7 @@ const unsigned long PING_TIMER = 5000;
 const double Vcc = 3.3;
 const double MAXIMUM_POWER = 2.65 * 5.8e-3;
 const int sampInterval = 10;
-const int CALIBRATION_START_DELAY = 5000;
+const int CALIBRATION_START_DELAY = 10000;
 
 const int R = 10e3;
 const double b = 6.1521825181113625;
@@ -68,8 +72,9 @@ MCP2515 can0{spi0, 17, 19, 16, 18, 10000000};
 unsigned long time_since_last_ping = 0;
 
 std::set<uint8_t> other_luminaires;
+std::vector<uint8_t> luminaire_ids;
 std::set<uint8_t> ready_luminaires;
-std::vector<float> coupling_gains;
+std::map<int, float> coupling_gains;
 bool is_calibrating_as_master = false, is_calibrating = false;
 uint8_t calibration_master = 0, calibrating_luminaire = 0;
 std::size_t total_calibrations = 0;
@@ -77,11 +82,12 @@ std::size_t total_calibrations = 0;
 enum calibration_stage_t : uint8_t
 {
   WAIT_FOR_ACK = 0,
-  WAIT_FOR_END,
+  CHANGE_STATE,
   CALIBRATING,
-  SET_NEW,
   DONE
-} calibration_stage;
+};
+
+calibration_stage_t calibration_stage, next_stage;
 
 enum msg_t : uint8_t
 {
@@ -93,9 +99,10 @@ enum msg_t : uint8_t
   END,
   INTERFACE_SET_FEEDBACK,
   INTERFACE_GET_FEEDBACK,
-  INTERFACE_VALUE
+  INTERFACE_VALUE,
+  READY_TO_READ
 };
-char message_type_translations[][23] = {"PING", "OFF", "ON", "CALIBRATE", "ACK", "END", "INTERFACE_SET_FEEDBACK", "INTERFACE_GET_FEEDBACK", "INTERFACE_VALUE"};
+char message_type_translations[][23] = {"PING", "OFF", "ON", "CALIBRATE", "ACK", "END", "INTERFACE_SET_FEEDBACK", "INTERFACE_GET_FEEDBACK", "INTERFACE_VALUE", "READY_TO_READ"};
 
 double adc2resistance(int adc_value)
 {
@@ -209,6 +216,8 @@ void serial_command()
       Serial.printf("Received message of unknown type (%d) from %d\n", message_type, sender);
 
     float value = 0;
+    int id_active = 0;
+    double lux_value = 0;
     switch (message_type)
     {
     case msg_t::PING:
@@ -229,17 +238,14 @@ void serial_command()
       if (!is_calibrating_as_master)
       {
         controller.set_feedback(true);
+        print_map(coupling_gains);
         enqueue_message(sender, msg_t::ACK, nullptr, 0);
       }
       else
         ready_luminaires.insert(sender);
       break;
-    case msg_t::CALIBRATE:
-      is_calibrating = true;
-      start_calibrate_routine(sender);
-      break;
     case msg_t::ACK:
-      if (is_calibrating && is_calibrating_as_master)
+      if (is_calibrating || is_calibrating_as_master)
         ready_luminaires.insert(sender);
       else
         Serial.printf("ack from %d\n", sender);
@@ -257,6 +263,16 @@ void serial_command()
       memcpy(&value, data, sizeof(value));
       Serial.printf("k %d %d\n", sender, (int)value);
       break;
+
+    case msg_t::READY_TO_READ:
+      memcpy(&id_active, data, sizeof(id_active));
+      lux_value = adc2lux(read_from_filter());
+      if (id_active == -1 || coupling_gains.count(-1) == 0)
+        coupling_gains[id_active] = lux_value;
+      else
+        coupling_gains[id_active] = lux_value - coupling_gains[-1];      
+      break;
+
     default:
       Serial.println("Couldn't decode message");
       break;
@@ -401,28 +417,16 @@ void enqueue_message(uint8_t recipient, msg_t type, uint8_t *message, std::size_
 
 void master_calibrate_routine()
 {
+  luminaire_ids.clear();  
+  luminaire_ids.push_back(LUMINAIRE);
+  std::copy(other_luminaires.begin(), other_luminaires.end(), std::back_inserter(luminaire_ids));
   coupling_gains.clear();
   total_calibrations = 0;
   is_calibrating_as_master = true;
   is_calibrating = true;
   ready_luminaires.clear();
   calibration_stage = calibration_stage_t::WAIT_FOR_ACK;
-  controller.set_feedback(false);
-  analogWrite(LED_PIN, 0);
-  for (const uint8_t luminaire : other_luminaires)
-  {
-    enqueue_message(luminaire, msg_t::OFF, nullptr, 0);
-  }
-}
-
-void start_calibrate_routine(uint8_t master)
-{
-  calibration_master = master;
-  coupling_gains.clear();
-  is_calibrating_as_master = false;
-  is_calibrating = true;
-  ready_luminaires.clear();
-  calibration_stage = calibration_stage_t::WAIT_FOR_ACK;
+  next_stage = calibration_stage_t::CALIBRATING;
   controller.set_feedback(false);
   analogWrite(LED_PIN, 0);
   for (const uint8_t luminaire : other_luminaires)
@@ -445,13 +449,15 @@ void calibrate_loop()
     case calibration_stage_t::WAIT_FOR_ACK:
       if (ready_luminaires.size() == other_luminaires.size())
       {
-        Serial.printf("Got ACKS from all luminaires, moving on to calibration (%d/%d)\n", coupling_gains.size() + 1, other_luminaires.size() + 2);
+        if (next_stage == calibration_stage_t::CALIBRATING)
+          Serial.printf("Got ACKS from all luminaires, moving on to calibration (%d/%d)\n", coupling_gains.size() + 1, luminaire_ids.size() + 1);
         // Advance stage and send new messages
-        calibration_stage = calibration_stage_t::CALIBRATING;
+        calibration_stage = next_stage;
         calibration_start_time = current_time;
         calibration_started = false;
       }
       break;
+
     case calibration_stage_t::CALIBRATING:
       // Wait for capacitor discharge
       if (!calibration_started && current_time - calibration_start_time > CALIBRATION_START_DELAY)
@@ -462,11 +468,13 @@ void calibrate_loop()
 
       if (calibration_started)
       {
+        int id_active = coupling_gains.size() == 0 ? -1 : luminaire_ids[coupling_gains.size() - 1];
+        enqueue_message(BROADCAST, msg_t::READY_TO_READ, (uint8_t*) &id_active, sizeof(id_active));
         double lux_value = adc2lux(read_from_filter());
         if (coupling_gains.size() == 0)
-          coupling_gains.push_back(lux_value);
+          coupling_gains[id_active] = lux_value;
         else
-          coupling_gains.push_back(lux_value - coupling_gains[0]);
+          coupling_gains[id_active] = lux_value - coupling_gains[-1];
 
         // LED ON for the first gain, off after that
         if (coupling_gains.size() == 1)
@@ -474,68 +482,37 @@ void calibrate_loop()
         else
           analogWrite(LED_PIN, 0);
 
-        if (coupling_gains.size() == other_luminaires.size() + 2)
+        calibration_stage = calibration_stage_t::WAIT_FOR_ACK;
+        next_stage = calibration_stage_t::CHANGE_STATE;
+      }
+      break;
+
+    case calibration_stage_t::CHANGE_STATE:
+      if (coupling_gains.size() == luminaire_ids.size() + 1)
+      {
+        enqueue_message(BROADCAST, msg_t::END, nullptr, 0);
+        calibration_stage = calibration_stage_t::DONE;
+        is_calibrating = false;
+        is_calibrating_as_master = false;
+        controller.set_feedback(true);
+        print_map(coupling_gains);
+      }
+      else
+      {
+        calibration_stage = calibration_stage_t::WAIT_FOR_ACK;
+        next_stage = calibration_stage_t::CALIBRATING;
+        ready_luminaires.clear();
+        for (i = 1; i < luminaire_ids.size(); i++)
         {
-          if (is_calibrating_as_master)
-          {
-            Serial.println("Finished calibrating this luminaire, commanding others");
-            calibration_stage = calibration_stage_t::SET_NEW;
-          }
+          // Turn on the right luminaire
+          if (i == coupling_gains.size() - 1)
+            enqueue_message(luminaire_ids[i], msg_t::ON, nullptr, 0);
           else
-          {
-            Serial.println("Finished calibrating the luminaire");
-            calibration_stage = calibration_stage_t::DONE;
-            is_calibrating = false;
-            enqueue_message(calibration_master, msg_t::END, nullptr, 0);
-          }
+            enqueue_message(luminaire_ids[i], msg_t::OFF, nullptr, 0);
         }
-        else
-        {
-          calibration_stage = calibration_stage_t::WAIT_FOR_ACK;
-          ready_luminaires.clear();
-          i = 0;
-          for (const uint8_t luminaire : other_luminaires)
-          {
-            // Turn on the right luminaire
-            if (i == coupling_gains.size() - 2)
-              enqueue_message(luminaire, msg_t::ON, nullptr, 0);
-            else
-              enqueue_message(luminaire, msg_t::OFF, nullptr, 0);
-            i++;
-          }
-        }
-      }
+      } 
       break;
-    case calibration_stage_t::SET_NEW:
-      i = 0;
-      ready_luminaires.clear();
-      for (const uint8_t id : other_luminaires)
-      {
-        if (i++ == total_calibrations)
-        {
-          enqueue_message(id, msg_t::CALIBRATE, nullptr, 0);
-          calibrating_luminaire = id;
-        }
-      }
-      calibration_stage = calibration_stage_t::WAIT_FOR_END;
-      break;
-    case calibration_stage_t::WAIT_FOR_END:
-      if (ready_luminaires.count(calibrating_luminaire))
-      {
-        Serial.println("Got END from all luminaires, finishing calibration");
-        // Advance stage and send new messages
-        total_calibrations++;
-        if (total_calibrations == other_luminaires.size())
-        {
-          calibration_stage = calibration_stage_t::DONE;
-          is_calibrating = false;
-          is_calibrating_as_master = false;
-          for (const uint8_t id : other_luminaires)
-            enqueue_message(id, msg_t::END, nullptr, 0);
-        }
-        calibration_stage = calibration_stage_t::SET_NEW;
-      }
-      break;
+    
     default:
       break;
     }
@@ -597,4 +574,28 @@ void loop1()
     can0.sendMessage(received_frm);
     delete received_frm;
   }
+}
+
+void print_map(std::map<int, float> m)
+{
+  Serial.print("{");
+  int i = 0;
+  for (auto const &pair : m)
+  {
+    Serial.printf("%d: %f", pair.first, pair.second);
+    i++;
+    if (i < m.size())
+      Serial.print(", ");
+  }
+  Serial.println("}");
+}
+
+bool is_signal_stable(const std::vector<int>& ldr_readings, int threshold) {
+    std::vector<int> differences(ldr_readings.size() - 1);
+    std::adjacent_difference(ldr_readings.begin(), ldr_readings.end(), differences.begin(), [](int a, int b) {
+        return std::abs(a - b);
+    });
+
+    double average_difference = std::accumulate(differences.begin(), differences.end(), 0.0) / differences.size();
+    return average_difference < threshold;
 }
