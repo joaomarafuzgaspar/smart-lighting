@@ -21,7 +21,7 @@ const unsigned long PING_TIMER = 5000;
 const double Vcc = 3.3;
 const double MAXIMUM_POWER = 2.65 * 5.8e-3;
 const int sampInterval = 10;
-const int CALIBRATION_START_DELAY = 10000;
+const int CALIBRATION_START_DELAY = 5000;
 
 const int R = 10e3;
 const double b = 6.1521825181113625;
@@ -441,6 +441,7 @@ void calibrate_loop()
   static bool calibration_started = false;
   unsigned long current_time = millis();
   std::size_t i = 0;
+  std::vector<double> recent_lux_readings;
 
   if (is_calibrating_as_master || is_calibrating)
   {
@@ -460,6 +461,9 @@ void calibrate_loop()
 
     case calibration_stage_t::CALIBRATING:
       // Wait for capacitor discharge
+      // FIXME - function that check signal stability may not work as requested
+      // recent_lux_readings = last_minute_buffer.get_recent_lux_values(100);
+      // if (!calibration_started && (current_time - calibration_start_time > CALIBRATION_START_DELAY || is_signal_stable(recent_lux_readings, 0.1)))
       if (!calibration_started && current_time - calibration_start_time > CALIBRATION_START_DELAY)
       {
         calibration_started = true;
@@ -590,12 +594,16 @@ void print_map(std::map<int, float> m)
   Serial.println("}");
 }
 
-bool is_signal_stable(const std::vector<int>& ldr_readings, int threshold) {
-    std::vector<int> differences(ldr_readings.size() - 1);
-    std::adjacent_difference(ldr_readings.begin(), ldr_readings.end(), differences.begin(), [](int a, int b) {
+bool is_signal_stable(const std::vector<double>& lux_values, double threshold) {
+    if (lux_values.empty()) {
+        return false;
+    }
+    
+    std::vector<double> differences(lux_values.size());
+    std::adjacent_difference(lux_values.begin(), lux_values.end(), differences.begin(), [](double a, double b) {
         return std::abs(a - b);
     });
 
-    double average_difference = std::accumulate(differences.begin(), differences.end(), 0.0) / differences.size();
+    double average_difference = std::accumulate(differences.begin() + 1, differences.end(), 0.0) / (differences.size() - 1);
     return average_difference < threshold;
 }

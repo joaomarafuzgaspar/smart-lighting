@@ -1,6 +1,8 @@
 #ifndef CIRCULAR_BUFFER_H
 #define CIRCULAR_BUFFER_H
 
+#include <vector>
+
 struct buffer_data {
   double lux_value;
   double duty_cycle;
@@ -47,6 +49,32 @@ public:
     }
 
       return oldest;
+  };
+
+  std::vector<double> get_recent_lux_values(int num_elements) {
+    std::vector<double> lux_values;
+    lux_values.reserve(num_elements);
+
+    if (is_empty()) {
+      return lux_values;
+    }
+
+    int start_idx = _head - num_elements + 1;
+    if (start_idx < 0) {
+      start_idx += _size;
+    }
+
+    int i = start_idx;
+    while (i != _head)
+    {
+      lux_values.push_back(_buffer[i].lux_value);
+      i++;
+      if (i == _size)
+        i = 0;
+    }
+    lux_values.push_back(_buffer[_head].lux_value);
+
+    return lux_values;
   };
 
 private:
