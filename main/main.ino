@@ -6,8 +6,7 @@
 #include "controller.h"
 #include "circular_buffer.h"
 
-
-#define DIFFERENCE(a, b) ((a) > (b) ? (a) - (b):(b) - (a))
+#define DIFFERENCE(a, b) ((a) > (b) ? (a) - (b) : (b) - (a))
 
 // Constants
 const int DAC_RANGE = 4096;
@@ -30,8 +29,9 @@ int last_measurements[MEDIAN_FILTER_SIZE] = {1, 1, 1, 1, 1};
 // Luminaire ID
 uint8_t LUMINAIRE;
 
-enum inter_core_cmds {
-  //From core1 to core0: contains data read (16 bit)
+enum inter_core_cmds
+{
+  // From core1 to core0: contains data read (16 bit)
   ICC_READ_DATA = 1,
   // From core0 to core1: contains data to write (16 bit)
   ICC_WRITE_DATA = 2,
@@ -64,7 +64,7 @@ int buffer_read_size = 0;
 int buffer_read_counter = 0;
 double serial_duty_cycle = 0;
 int visualization = 0;
-MCP2515 can0 {spi0, 17, 19, 16, 18, 10000000};
+MCP2515 can0{spi0, 17, 19, 16, 18, 10000000};
 unsigned long time_since_last_ping = 0;
 
 std::set<uint8_t> other_luminaires;
@@ -74,15 +74,17 @@ bool is_calibrating_as_master = false, is_calibrating = false;
 uint8_t calibration_master = 0, calibrating_luminaire = 0;
 std::size_t total_calibrations = 0;
 
-enum calibration_stage_t : uint8_t {
+enum calibration_stage_t : uint8_t
+{
   WAIT_FOR_ACK = 0,
   WAIT_FOR_END,
-  CALIBRATING,  
+  CALIBRATING,
   SET_NEW,
   DONE
 } calibration_stage;
 
-enum msg_t : uint8_t {
+enum msg_t : uint8_t
+{
   PING = 0,
   OFF,
   ON,
@@ -98,7 +100,7 @@ char message_type_translations[][23] = {"PING", "OFF", "ON", "CALIBRATE", "ACK",
 double adc2resistance(int adc_value)
 {
   /* V_ADC = adc_value / DAC_RANGE * VCC; R_LDR = VCC / V_ADC * R - R */
-  return R * (DAC_RANGE / ((double) adc_value) - 1);
+  return R * (DAC_RANGE / ((double)adc_value) - 1);
 }
 
 double resistance2lux(double R_LDR)
@@ -125,7 +127,8 @@ int read_from_filter()
 }
 
 /* Get box gain to then compute the external luminance */
-double calibrate_gain() {
+double calibrate_gain()
+{
   double u1 = 0, u2 = 1, y1, y2;
 
   analogWrite(LED_PIN, 0);
@@ -145,17 +148,18 @@ double calibrate_gain() {
   return (y2 - y1) / (u2 - u1);
 }
 
-void setup() {
+void setup()
+{
   uint8_t pico_flash_id[8];
   rp2040.idleOtherCore();
   flash_get_unique_id(pico_flash_id);
   rp2040.resumeOtherCore();
-  LUMINAIRE = pico_flash_id[7];  
-  
+  LUMINAIRE = pico_flash_id[7];
+
   Serial.begin(115200);
   analogReadResolution(DAC_BITS);
   analogWriteRange(DAC_RANGE);
-  analogWriteFreq(60000); 
+  analogWriteFreq(60000);
   controller.set_controller(LUMINAIRE);
 
   // Box gain calibration
@@ -164,13 +168,14 @@ void setup() {
   time_since_last_ping = millis();
 }
 
-void setup1() {
+void setup1()
+{
   uint8_t pico_flash_id[8];
   rp2040.idleOtherCore();
   flash_get_unique_id(pico_flash_id);
   rp2040.resumeOtherCore();
-  LUMINAIRE = pico_flash_id[7];  
-  
+  LUMINAIRE = pico_flash_id[7];
+
   can0.reset();
   can0.setBitrate(CAN_1000KBPS);
   can0.setFilterMask(MCP2515::MASK0, 0, 0x000000ff);
@@ -182,17 +187,19 @@ void setup1() {
   can0.setNormalMode();
 }
 
-void serial_command() {
+void serial_command()
+{
   const int BUFFER_SIZE = 128;
   static char buffer[BUFFER_SIZE];
   static int buffer_pos = 0;
 
-  can_frame *frm;  
-  while (rp2040.fifo.available()) {
-    if (!rp2040.fifo.pop_nb((uint32_t*) &frm))
+  can_frame *frm;
+  while (rp2040.fifo.available())
+  {
+    if (!rp2040.fifo.pop_nb((uint32_t *)&frm))
       break;
 
-    msg_t message_type = (msg_t) frm->data[1];
+    msg_t message_type = (msg_t)frm->data[1];
     uint8_t sender = frm->data[0];
     uint8_t *data = &frm->data[2];
 
@@ -200,81 +207,87 @@ void serial_command() {
       Serial.printf("Received message of type %s from %d\n", message_type_translations[message_type], sender);
     else if (message_type != msg_t::PING)
       Serial.printf("Received message of unknown type (%d) from %d\n", message_type, sender);
-    
-    double value = 0;
-    switch (message_type) {
-      case msg_t::PING:
-        if (other_luminaires.insert(sender).second)
-          Serial.printf("Added %d as a new neighbour\n", sender);
-        break;
-      case msg_t::OFF:
-        controller.set_feedback(false);
-        analogWrite(LED_PIN, 0);
+
+    float value = 0;
+    switch (message_type)
+    {
+    case msg_t::PING:
+      if (other_luminaires.insert(sender).second)
+        Serial.printf("Added %d as a new neighbour\n", sender);
+      break;
+    case msg_t::OFF:
+      controller.set_feedback(false);
+      analogWrite(LED_PIN, 0);
+      enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      break;
+    case msg_t::ON:
+      controller.set_feedback(false);
+      analogWrite(LED_PIN, 4095);
+      enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      break;
+    case msg_t::END:
+      if (!is_calibrating_as_master)
+      {
+        controller.set_feedback(true);
         enqueue_message(sender, msg_t::ACK, nullptr, 0);
-        break;
-      case msg_t::ON:
-        controller.set_feedback(false);
-        analogWrite(LED_PIN, 4095);
-        enqueue_message(sender, msg_t::ACK, nullptr, 0);
-        break;
-      case msg_t::END:
-        if (!is_calibrating_as_master) {
-          controller.set_feedback(true);
-          enqueue_message(sender, msg_t::ACK, nullptr, 0);
-        }
-        else
-          ready_luminaires.insert(sender);
-        break;
-      case msg_t::CALIBRATE:
-        is_calibrating = true;
-        start_calibrate_routine(sender);
-        break;
-      case msg_t::ACK:
-        if (is_calibrating && is_calibrating_as_master) 
-          ready_luminaires.insert(sender);
-        else
-          Serial.printf("ack from %d\n", sender);
-        break;
-      case msg_t::INTERFACE_GET_FEEDBACK:
-        value = (double) controller.get_feedback();
-        enqueue_message(sender, msg_t::INTERFACE_VALUE, (uint8_t*) &value, sizeof(value));
-        break;
-      case msg_t::INTERFACE_SET_FEEDBACK:
-        value = *((double*) data);
-        controller.set_feedback((int) value);
-        enqueue_message(sender, msg_t::ACK, nullptr, 0);
-        break;
-      case msg_t::INTERFACE_VALUE:
-        //value = *((double*) data);
-        //Serial.printf("k %d %d\n", sender, (int) value);
-        Serial.println("FIXME");
-        break;
-      default:
-        Serial.println("Couldn't decode message");
-        break;
+      }
+      else
+        ready_luminaires.insert(sender);
+      break;
+    case msg_t::CALIBRATE:
+      is_calibrating = true;
+      start_calibrate_routine(sender);
+      break;
+    case msg_t::ACK:
+      if (is_calibrating && is_calibrating_as_master)
+        ready_luminaires.insert(sender);
+      else
+        Serial.printf("ack from %d\n", sender);
+      break;
+    case msg_t::INTERFACE_GET_FEEDBACK:
+      value = (float)controller.get_feedback();
+      enqueue_message(sender, msg_t::INTERFACE_VALUE, (uint8_t *)&value, sizeof(value));
+      break;
+    case msg_t::INTERFACE_SET_FEEDBACK:
+      memcpy(&value, data, sizeof(value));
+      controller.set_feedback((int)value);
+      enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      break;
+    case msg_t::INTERFACE_VALUE:
+      memcpy(&value, data, sizeof(value));
+      Serial.printf("k %d %d\n", sender, (int)value);
+      break;
+    default:
+      Serial.println("Couldn't decode message");
+      break;
     }
     delete frm;
   }
-  
-  while (Serial.available() > 0) {
+
+  while (Serial.available() > 0)
+  {
     char c = Serial.read();
 
-    if (c == '\n') { // Found complete message
+    if (c == '\n')
+    { // Found complete message
       buffer[buffer_pos] = '\0';
       interface(buffer);
       buffer_pos = 0;
     }
-    else if (buffer_pos < BUFFER_SIZE - 1) {
+    else if (buffer_pos < BUFFER_SIZE - 1)
+    {
       buffer[buffer_pos] = c;
       buffer_pos++;
-    } 
-    else { // Buffer overflow - reset buffer position
+    }
+    else
+    { // Buffer overflow - reset buffer position
       buffer_pos = 0;
     }
   }
 }
 
-void control_loop() {
+void control_loop()
+{
   static unsigned long last_run = micros();
   unsigned long current_run = micros();
 
@@ -286,19 +299,21 @@ void control_loop() {
   write_into_filter(adc_value);
   lux_value = adc2lux(read_from_filter());
 
-  if (visualization) {
+  if (visualization)
+  {
     Serial.print(lux_value);
     Serial.print(" ");
     Serial.print(r);
     Serial.println(" 0 50 ");
   }
 
-  if (controller.get_feedback()) {
-    int u = (int) controller.get_control_signal(r, lux_value, h);
+  if (controller.get_feedback())
+  {
+    int u = (int)controller.get_control_signal(r, lux_value, h);
     analogWrite(LED_PIN, u);
-    duty_cycle = (double) u / DAC_RANGE;
+    duty_cycle = (double)u / DAC_RANGE;
   }
-  else 
+  else
     duty_cycle = serial_duty_cycle;
 
   /* Performance Metrics/Others */
@@ -307,23 +322,24 @@ void control_loop() {
   data = {lux_value, duty_cycle};
   last_minute_buffer.insert_new(data);
 
-  // Energy  
+  // Energy
   energy += MAXIMUM_POWER * duty_cycle * DIFFERENCE(current_run, last_run) * pow(10, -6);
 
   // Visibility Error (not averaged)
   visibility_error += max(0, r - lux_value);
 
   // Flicker Error (not averaged)
-  if (iteration_counter > 2) {
-      if ((duty_cycle - prev_duty_cycle_1) * (prev_duty_cycle_1 - prev_duty_cycle_2) < 0)
-          flicker_error += abs(duty_cycle - prev_duty_cycle_1) + abs(prev_duty_cycle_1 - prev_duty_cycle_2);
-      prev_duty_cycle_2 = prev_duty_cycle_1;
-      prev_duty_cycle_1 = duty_cycle;
-  } 
+  if (iteration_counter > 2)
+  {
+    if ((duty_cycle - prev_duty_cycle_1) * (prev_duty_cycle_1 - prev_duty_cycle_2) < 0)
+      flicker_error += abs(duty_cycle - prev_duty_cycle_1) + abs(prev_duty_cycle_1 - prev_duty_cycle_2);
+    prev_duty_cycle_2 = prev_duty_cycle_1;
+    prev_duty_cycle_1 = duty_cycle;
+  }
   else if (iteration_counter == 2)
-      prev_duty_cycle_1 = duty_cycle;
+    prev_duty_cycle_1 = duty_cycle;
   else
-      prev_duty_cycle_2 = duty_cycle;
+    prev_duty_cycle_2 = duty_cycle;
 
   if (stream_l)
     Serial.printf("s l %d %lf %d\n", LUMINAIRE, lux_value, millis());
@@ -335,25 +351,28 @@ void control_loop() {
     Serial.printf("s j %d %lf %d\n", LUMINAIRE, DIFFERENCE(DIFFERENCE(current_run, last_run), sampInterval * pow(10, 3)), millis());
 
   // Read last minute buffer
-  if (buffer_read_counter < buffer_read_size) {
+  if (buffer_read_counter < buffer_read_size)
+  {
     int t = 20;
 
     if (buffer_read_size - buffer_read_counter < t)
       t = buffer_read_size - buffer_read_counter;
 
-    for (int i = 0; i < t; i++) {
+    for (int i = 0; i < t; i++)
+    {
       data = last_minute_buffer.remove_oldest();
 
       if (buffer_l)
         Serial.printf("%f, ", data.lux_value);
-      
+
       if (buffer_d)
         Serial.printf("%f, ", data.duty_cycle);
 
       buffer_read_counter++;
     }
   }
-  else {
+  else
+  {
     if (buffer_d || buffer_l)
       Serial.println();
     buffer_d = 0;
@@ -365,31 +384,33 @@ void control_loop() {
   last_run = current_run;
 }
 
-void enqueue_message(uint8_t recipient, msg_t type, uint8_t* message, std::size_t msg_size)
+void enqueue_message(uint8_t recipient, msg_t type, uint8_t *message, std::size_t msg_size)
 {
-  if (type != msg_t::PING) Serial.printf("Enqueuing message of type %s with size %lu to recipient %d\n", message_type_translations[type], msg_size, recipient);
+  if (type != msg_t::PING)
+    Serial.printf("Enqueuing message of type %s with size %lu to recipient %d\n", message_type_translations[type], msg_size, recipient);
   can_frame *new_frame = new can_frame;
-  std::size_t length = min(msg_size+2, CAN_MAX_DLEN);
+  std::size_t length = min(msg_size + 2, CAN_MAX_DLEN);
   new_frame->can_id = recipient;
   new_frame->can_dlc = length;
   if (msg_size > 0 && message != nullptr)
-    memcpy(new_frame->data+2, message, length-2);
+    memcpy(new_frame->data + 2, message, length - 2);
   new_frame->data[0] = LUMINAIRE;
   new_frame->data[1] = type;
-  rp2040.fifo.push_nb((uint32_t) new_frame);
+  rp2040.fifo.push_nb((uint32_t)new_frame);
 }
 
 void master_calibrate_routine()
 {
   coupling_gains.clear();
-  total_calibrations = 0;  
+  total_calibrations = 0;
   is_calibrating_as_master = true;
   is_calibrating = true;
-  ready_luminaires.clear();  
+  ready_luminaires.clear();
   calibration_stage = calibration_stage_t::WAIT_FOR_ACK;
   controller.set_feedback(false);
   analogWrite(LED_PIN, 0);
-  for (const uint8_t luminaire : other_luminaires) {
+  for (const uint8_t luminaire : other_luminaires)
+  {
     enqueue_message(luminaire, msg_t::OFF, nullptr, 0);
   }
 }
@@ -400,11 +421,12 @@ void start_calibrate_routine(uint8_t master)
   coupling_gains.clear();
   is_calibrating_as_master = false;
   is_calibrating = true;
-  ready_luminaires.clear();  
+  ready_luminaires.clear();
   calibration_stage = calibration_stage_t::WAIT_FOR_ACK;
   controller.set_feedback(false);
   analogWrite(LED_PIN, 0);
-  for (const uint8_t luminaire : other_luminaires) {
+  for (const uint8_t luminaire : other_luminaires)
+  {
     enqueue_message(luminaire, msg_t::OFF, nullptr, 0);
   }
 }
@@ -414,113 +436,133 @@ void calibrate_loop()
   static unsigned long calibration_start_time = 0;
   static bool calibration_started = false;
   unsigned long current_time = millis();
-  std::size_t i = 0; 
+  std::size_t i = 0;
 
-  if (is_calibrating_as_master || is_calibrating) {
-    switch (calibration_stage) {
-      case calibration_stage_t::WAIT_FOR_ACK:
-        if (ready_luminaires.size() == other_luminaires.size()) {
-          Serial.printf("Got ACKS from all luminaires, moving on to calibration (%d/%d)\n", coupling_gains.size()+1, other_luminaires.size()+2);
-          // Advance stage and send new messages
-          calibration_stage = calibration_stage_t::CALIBRATING;
-          calibration_start_time = current_time;
-          calibration_started = false;
-        }
-        break;
-      case calibration_stage_t::CALIBRATING:
-        // Wait for capacitor discharge 
-        if (!calibration_started && current_time - calibration_start_time > CALIBRATION_START_DELAY) {
-          calibration_started = true;
-          Serial.println("Comencing calibration now");
-        }
+  if (is_calibrating_as_master || is_calibrating)
+  {
+    switch (calibration_stage)
+    {
+    case calibration_stage_t::WAIT_FOR_ACK:
+      if (ready_luminaires.size() == other_luminaires.size())
+      {
+        Serial.printf("Got ACKS from all luminaires, moving on to calibration (%d/%d)\n", coupling_gains.size() + 1, other_luminaires.size() + 2);
+        // Advance stage and send new messages
+        calibration_stage = calibration_stage_t::CALIBRATING;
+        calibration_start_time = current_time;
+        calibration_started = false;
+      }
+      break;
+    case calibration_stage_t::CALIBRATING:
+      // Wait for capacitor discharge
+      if (!calibration_started && current_time - calibration_start_time > CALIBRATION_START_DELAY)
+      {
+        calibration_started = true;
+        Serial.println("Comencing calibration now");
+      }
 
-        if (calibration_started) {
-          double lux_value = adc2lux(read_from_filter());
-          if (coupling_gains.size() == 0)
-            coupling_gains.push_back(lux_value);
+      if (calibration_started)
+      {
+        double lux_value = adc2lux(read_from_filter());
+        if (coupling_gains.size() == 0)
+          coupling_gains.push_back(lux_value);
+        else
+          coupling_gains.push_back(lux_value - coupling_gains[0]);
+
+        // LED ON for the first gain, off after that
+        if (coupling_gains.size() == 1)
+          analogWrite(LED_PIN, 4095);
+        else
+          analogWrite(LED_PIN, 0);
+
+        if (coupling_gains.size() == other_luminaires.size() + 2)
+        {
+          if (is_calibrating_as_master)
+          {
+            Serial.println("Finished calibrating this luminaire, commanding others");
+            calibration_stage = calibration_stage_t::SET_NEW;
+          }
           else
-            coupling_gains.push_back(lux_value - coupling_gains[0]);
-
-          // LED ON for the first gain, off after that
-          if (coupling_gains.size() == 1) 
-            analogWrite(LED_PIN, 4095);
-          else
-            analogWrite(LED_PIN, 0);
-
-          if (coupling_gains.size() == other_luminaires.size() + 2) { 
-            if (is_calibrating_as_master) {
-              Serial.println("Finished calibrating this luminaire, commanding others");
-              calibration_stage = calibration_stage_t::SET_NEW;
-            }
-            else {
-              Serial.println("Finished calibrating the luminaire");
-              calibration_stage = calibration_stage_t::DONE;
-              is_calibrating = false;
-              enqueue_message(calibration_master, msg_t::END, nullptr, 0);
-            }            
-          }
-          else {
-            calibration_stage = calibration_stage_t::WAIT_FOR_ACK;
-            ready_luminaires.clear();
-            i = 0;
-            for (const uint8_t luminaire : other_luminaires) {
-              // Turn on the right luminaire
-              if (i == coupling_gains.size() - 2)
-                enqueue_message(luminaire, msg_t::ON, nullptr, 0);
-              else
-                enqueue_message(luminaire, msg_t::OFF, nullptr, 0);
-              i++;
-            }
-          }
-        }
-        break;
-      case calibration_stage_t::SET_NEW:
-        i = 0;
-        ready_luminaires.clear();
-        for (const uint8_t id : other_luminaires) {
-          if (i++ == total_calibrations) {
-            enqueue_message(id, msg_t::CALIBRATE, nullptr, 0);
-            calibrating_luminaire = id;
-          }
-        }
-        calibration_stage = calibration_stage_t::WAIT_FOR_END;
-        break;
-      case calibration_stage_t::WAIT_FOR_END:
-        if (ready_luminaires.count(calibrating_luminaire)) {
-          Serial.println("Got END from all luminaires, finishing calibration");
-          // Advance stage and send new messages
-          total_calibrations++;
-          if (total_calibrations == other_luminaires.size()) {
+          {
+            Serial.println("Finished calibrating the luminaire");
             calibration_stage = calibration_stage_t::DONE;
             is_calibrating = false;
-            is_calibrating_as_master = false;
-            for (const uint8_t id : other_luminaires)
-              enqueue_message(id, msg_t::END, nullptr, 0);
+            enqueue_message(calibration_master, msg_t::END, nullptr, 0);
           }
-          calibration_stage = calibration_stage_t::SET_NEW;
         }
-        break;
-      default:
-        break;
+        else
+        {
+          calibration_stage = calibration_stage_t::WAIT_FOR_ACK;
+          ready_luminaires.clear();
+          i = 0;
+          for (const uint8_t luminaire : other_luminaires)
+          {
+            // Turn on the right luminaire
+            if (i == coupling_gains.size() - 2)
+              enqueue_message(luminaire, msg_t::ON, nullptr, 0);
+            else
+              enqueue_message(luminaire, msg_t::OFF, nullptr, 0);
+            i++;
+          }
+        }
+      }
+      break;
+    case calibration_stage_t::SET_NEW:
+      i = 0;
+      ready_luminaires.clear();
+      for (const uint8_t id : other_luminaires)
+      {
+        if (i++ == total_calibrations)
+        {
+          enqueue_message(id, msg_t::CALIBRATE, nullptr, 0);
+          calibrating_luminaire = id;
+        }
+      }
+      calibration_stage = calibration_stage_t::WAIT_FOR_END;
+      break;
+    case calibration_stage_t::WAIT_FOR_END:
+      if (ready_luminaires.count(calibrating_luminaire))
+      {
+        Serial.println("Got END from all luminaires, finishing calibration");
+        // Advance stage and send new messages
+        total_calibrations++;
+        if (total_calibrations == other_luminaires.size())
+        {
+          calibration_stage = calibration_stage_t::DONE;
+          is_calibrating = false;
+          is_calibrating_as_master = false;
+          for (const uint8_t id : other_luminaires)
+            enqueue_message(id, msg_t::END, nullptr, 0);
+        }
+        calibration_stage = calibration_stage_t::SET_NEW;
+      }
+      break;
+    default:
+      break;
     }
   }
 }
 
-void ping_loop() {
+void ping_loop()
+{
   unsigned long current_time = millis();
   uint8_t ping_msg[4] = {ICC_WRITE_DATA, 0, 0, 0};
-  if (current_time - time_since_last_ping > PING_TIMER) {
+  if (current_time - time_since_last_ping > PING_TIMER)
+  {
     time_since_last_ping = current_time;
     enqueue_message(0, msg_t::PING, nullptr, 0);
   }
 }
 
-void can_frame_to_bytes(can_frame *frm, uint8_t b[4]) {
-  b[0] = frm->can_id; b[1] = frm->data[2];
-  b[2] = frm->data[1]; b[3] = frm->data[0];
+void can_frame_to_bytes(can_frame *frm, uint8_t b[4])
+{
+  b[0] = frm->can_id;
+  b[1] = frm->data[2];
+  b[2] = frm->data[1];
+  b[3] = frm->data[0];
 }
 
-void loop() {
+void loop()
+{
   control_loop();
   serial_command();
   ping_loop();
@@ -531,23 +573,27 @@ void process_can_frame(can_frame *frm)
 {
   can_frame *new_frame = new can_frame;
   memcpy(new_frame, frm, sizeof(can_frame));
-  rp2040.fifo.push_nb((uint32_t) new_frame);
+  rp2040.fifo.push_nb((uint32_t)new_frame);
 }
 
-void loop1() {
+void loop1()
+{
   can_frame frm, *received_frm;
 
   uint8_t irq = can0.getInterrupts();
-  if (irq & MCP2515::CANINTF_RX0IF) {
+  if (irq & MCP2515::CANINTF_RX0IF)
+  {
     can0.readMessage(MCP2515::RXB0, &frm);
     process_can_frame(&frm);
   }
-  if (irq & MCP2515::CANINTF_RX1IF) {
+  if (irq & MCP2515::CANINTF_RX1IF)
+  {
     can0.readMessage(MCP2515::RXB1, &frm);
     process_can_frame(&frm);
-  }  
+  }
 
-  if (rp2040.fifo.pop_nb((uint32_t*) &received_frm)) {
+  if (rp2040.fifo.pop_nb((uint32_t *)&received_frm))
+  {
     can0.sendMessage(received_frm);
     delete received_frm;
   }
