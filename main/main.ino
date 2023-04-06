@@ -100,9 +100,15 @@ enum msg_t : uint8_t
   INTERFACE_SET_FEEDBACK,
   INTERFACE_GET_FEEDBACK,
   INTERFACE_VALUE,
-  READY_TO_READ
+  READY_TO_READ,
+  SET_DUTY_CYCLE,
+  GET_DUTY_CYCLE,
+  DUTY_CYCLE_VALUE,
+  SET_REFERENCE,
+  GET_REFERENCE, 
+  REFERENCE_VALUE
 };
-char message_type_translations[][23] = {"PING", "OFF", "ON", "CALIBRATE", "ACK", "END", "INTERFACE_SET_FEEDBACK", "INTERFACE_GET_FEEDBACK", "INTERFACE_VALUE", "READY_TO_READ"};
+char message_type_translations[][23] = {"PING", "OFF", "ON", "CALIBRATE", "ACK", "END", "INTERFACE_SET_FEEDBACK", "INTERFACE_GET_FEEDBACK", "INTERFACE_VALUE", "READY_TO_READ", "SET_DUTY_CYCLE", "GET_DUTY_CYCLE", "DUTY_CYCLE_VALUE", "SET_REFERENCE", "GET_REFERENCE", "REFERENCE_VALUE"};
 
 double adc2resistance(int adc_value)
 {
@@ -218,22 +224,26 @@ void serial_command()
     float value = 0;
     int id_active = 0;
     double lux_value = 0;
+
     switch (message_type)
     {
     case msg_t::PING:
       if (other_luminaires.insert(sender).second)
         Serial.printf("Added %d as a new neighbour\n", sender);
       break;
+
     case msg_t::OFF:
       controller.set_feedback(false);
       analogWrite(LED_PIN, 0);
       enqueue_message(sender, msg_t::ACK, nullptr, 0);
       break;
+
     case msg_t::ON:
       controller.set_feedback(false);
       analogWrite(LED_PIN, 4095);
       enqueue_message(sender, msg_t::ACK, nullptr, 0);
       break;
+
     case msg_t::END:
       if (!is_calibrating_as_master)
       {
@@ -244,21 +254,26 @@ void serial_command()
       else
         ready_luminaires.insert(sender);
       break;
+
     case msg_t::ACK:
       if (is_calibrating || is_calibrating_as_master)
         ready_luminaires.insert(sender);
       else
         Serial.printf("ack from %d\n", sender);
       break;
+
     case msg_t::INTERFACE_GET_FEEDBACK:
       value = (float)controller.get_feedback();
       enqueue_message(sender, msg_t::INTERFACE_VALUE, (uint8_t *)&value, sizeof(value));
       break;
+
     case msg_t::INTERFACE_SET_FEEDBACK:
       memcpy(&value, data, sizeof(value));
+      serial_duty_cycle = controller.get_u() / DAC_RANGE;
       controller.set_feedback((int)value);
       enqueue_message(sender, msg_t::ACK, nullptr, 0);
       break;
+      
     case msg_t::INTERFACE_VALUE:
       memcpy(&value, data, sizeof(value));
       Serial.printf("k %d %d\n", sender, (int)value);
@@ -271,6 +286,42 @@ void serial_command()
         coupling_gains[id_active] = lux_value;
       else
         coupling_gains[id_active] = lux_value - coupling_gains[-1];      
+      break;
+    
+    case msg_t::SET_DUTY_CYCLE:
+      memcpy(&value, data, sizeof(value));
+      serial_duty_cycle = (double)value;
+      analogWrite(LED_PIN, value * DAC_RANGE);
+      enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      break;
+
+    case msg_t::GET_DUTY_CYCLE:
+      if (controller.get_feedback())
+        value = (float)controller.get_duty_cycle();
+      else
+        value = (float)serial_duty_cycle;
+      enqueue_message(sender, msg_t::DUTY_CYCLE_VALUE, (uint8_t *)&value, sizeof(value));
+      break;
+
+    case msg_t::DUTY_CYCLE_VALUE:
+      memcpy(&value, data, sizeof(value));
+      Serial.printf("d %d %f\n", sender, value);
+      break;
+
+    case msg_t::SET_REFERENCE:
+      memcpy(&value, data, sizeof(value));
+      r = (double)value;
+      enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      break;
+
+    case msg_t::GET_REFERENCE:
+      value = (float)r;
+      enqueue_message(sender, msg_t::REFERENCE_VALUE, (uint8_t *)&value, sizeof(value));
+      break;
+
+    case msg_t::REFERENCE_VALUE:
+      memcpy(&value, data, sizeof(value));
+      Serial.printf("r %d %f\n", sender, value);
       break;
 
     default:

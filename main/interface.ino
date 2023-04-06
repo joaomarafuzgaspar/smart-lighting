@@ -40,20 +40,6 @@ void interface(char *buffer) {
             return; 
         }
       }
-      else {
-        switch (subcmd) {
-          case 'k': /* Change gain K at luminaire i controller */
-            enqueue_message(i, msg_t::INTERFACE_GET_FEEDBACK, nullptr, 0);
-            break;
-          case 'i': /* Change time constant Ti at luminaire i controller */
-          case 'b': /* Change gain b at luminaire i controller */
-          case 't': /* Change time constant Tt at luminaire i controller */
-          case 'r': /* Re-calibrate box gain */
-          default:
-            Serial.println("err -> Invalid Command, please try again.");
-            return; 
-        }
-      }
       break;    
 
     case 'd': /* Set directly the duty cycle of the LED at luminaire i */
@@ -63,17 +49,24 @@ void interface(char *buffer) {
         analogWrite(LED_PIN, serial_duty_cycle * DAC_RANGE);
         Serial.println("ack");
       }
+      else {
+        float aux = (float) val;
+        enqueue_message(i, msg_t::SET_DUTY_CYCLE, (uint8_t*) &aux, sizeof(aux));
+      }
       break;
 
     case 'g':
       std::sscanf(buffer, "%c %c %d", &cmd, &subcmd, &i);
       switch (subcmd) {
         case 'd': /* Get current duty cycle at luminaire i */
-          if (LUMINAIRE == i)
+          if (LUMINAIRE == i){
             if (controller.get_feedback())
               Serial.printf("d %d %lf\n", LUMINAIRE, controller.get_duty_cycle());
             else
               Serial.printf("d %d %lf\n", LUMINAIRE, serial_duty_cycle);
+          }
+          else
+            enqueue_message(i, msg_t::GET_DUTY_CYCLE, nullptr, 0);
           break;
 
         case 'e': /* Get average energy consumption at desk <i> since the last system restart. */
@@ -94,6 +87,8 @@ void interface(char *buffer) {
         case 'r': /* Get current illuminance reference at luminaire i */
           if (LUMINAIRE == i)
             Serial.printf("r %d %lf\n", LUMINAIRE, r);
+          else
+            enqueue_message(i, msg_t::GET_REFERENCE, nullptr, 0);
           break;
         
         case 'l': /* Get measured illuminance at luminaire i */
@@ -180,8 +175,10 @@ void interface(char *buffer) {
           r = val;
           Serial.println("ack");
         }
-        else
-          Serial.println("err");
+        else {
+          float aux = (float) val;
+          enqueue_message(i, msg_t::SET_REFERENCE, (uint8_t*) &aux, sizeof(aux));
+        }
       }
       else {
         master_calibrate_routine();
@@ -215,8 +212,10 @@ void interface(char *buffer) {
         controller.set_feedback(val);
         Serial.println("ack");
       }
-      else
-        enqueue_message(i, msg_t::INTERFACE_SET_FEEDBACK, (uint8_t*) &val, sizeof(val));
+      else {
+        float aux = (float) val;
+        enqueue_message(i, msg_t::INTERFACE_SET_FEEDBACK, (uint8_t*) &aux, sizeof(aux));
+      }
       break;
 
     case 's': /* Start stream of real-time variable <x> of desk <i>. <x> can be “l”, “d” or "j". */
