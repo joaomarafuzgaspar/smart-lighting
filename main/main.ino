@@ -119,9 +119,15 @@ enum msg_t : uint8_t
   GET_POWER,
   POWER_VALUE,
   GET_ELAPSED_TIME,
-  ELAPSED_TIME_VALUE
+  ELAPSED_TIME_VALUE,
+  GET_ENERGY,
+  ENERGY_VALUE,
+  GET_VISIBILITY_ERROR,
+  VISIBILITY_ERROR_VALUE,
+  GET_FLICKER_ERROR,
+  FLICKER_ERROR_VALUE
 };
-char message_type_translations[][25] = {"PING", "OFF", "ON", "END", "ACK", "READY_TO_READ", "SET_DUTY_CYCLE", "GET_DUTY_CYCLE", "DUTY_CYCLE_VALUE", "SET_REFERENCE", "GET_REFERENCE", "REFERENCE_VALUE", "GET_LUMINANCE", "LUMINANCE_VALUE", "SET_OCCUPANCY", "GET_OCCUPANCY", "OCCUPANCY_VALUE", "SET_ANTI_WINDUP", "GET_ANTI_WINDUP", "ANTI_WINDUP_VALUE", "SET_FEEDBACK", "GET_FEEDBACK", "FEEDBACK_VALUE", "GET_EXTERNAL_LUMINANCE", "EXTERNAL_LUMINANCE_VALUE", "GET_POWER", "POWER_VALUE", "GET_ELAPSED_TIME", "ELAPSED_TIME_VALUE"};
+char message_type_translations[][25] = {"PING", "OFF", "ON", "END", "ACK", "READY_TO_READ", "SET_DUTY_CYCLE", "GET_DUTY_CYCLE", "DUTY_CYCLE_VALUE", "SET_REFERENCE", "GET_REFERENCE", "REFERENCE_VALUE", "GET_LUMINANCE", "LUMINANCE_VALUE", "SET_OCCUPANCY", "GET_OCCUPANCY", "OCCUPANCY_VALUE", "SET_ANTI_WINDUP", "GET_ANTI_WINDUP", "ANTI_WINDUP_VALUE", "SET_FEEDBACK", "GET_FEEDBACK", "FEEDBACK_VALUE", "GET_EXTERNAL_LUMINANCE", "EXTERNAL_LUMINANCE_VALUE", "GET_POWER", "POWER_VALUE", "GET_ELAPSED_TIME", "ELAPSED_TIME_VALUE", "GET_ENERGY", "ENERGY_VALUE", "GET_VISIBILITY_ERROR", "VISIBILITY_ERROR_VALUE", "GET_FLICKER_ERROR", "FLICKER_ERROR_VALUE"};
 
 double adc2resistance(int adc_value)
 {
@@ -410,6 +416,36 @@ void serial_command()
     case msg_t::ELAPSED_TIME_VALUE:
       memcpy(&value, data, sizeof(value));
       Serial.printf("t %d %f\n", sender, value);
+      break;
+
+    case msg_t::GET_ENERGY:
+      value = (float)energy;
+      enqueue_message(sender, msg_t::ENERGY_VALUE, (uint8_t *)&value, sizeof(value));
+      break;
+      
+    case msg_t::ENERGY_VALUE:
+      memcpy(&value, data, sizeof(value));
+      Serial.printf("e %d %f\n", sender, value);
+      break;
+
+    case msg_t::GET_VISIBILITY_ERROR:
+      value = (float)(visibility_error / (double) iteration_counter);
+      enqueue_message(sender, msg_t::VISIBILITY_ERROR_VALUE, (uint8_t *)&value, sizeof(value));
+      break;
+      
+    case msg_t::VISIBILITY_ERROR_VALUE:
+      memcpy(&value, data, sizeof(value));
+      Serial.printf("v %d %f\n", sender, value);
+      break;
+
+    case msg_t::GET_FLICKER_ERROR:
+      value = (float)(flicker_error / (double) iteration_counter);
+      enqueue_message(sender, msg_t::FLICKER_ERROR_VALUE, (uint8_t *)&value, sizeof(value));
+      break;
+      
+    case msg_t::FLICKER_ERROR_VALUE:
+      memcpy(&value, data, sizeof(value));
+      Serial.printf("f %d %f\n", sender, value);
       break;
 
     default:

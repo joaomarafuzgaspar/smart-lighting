@@ -72,16 +72,22 @@ void interface(char *buffer) {
         case 'e': /* Get average energy consumption at desk <i> since the last system restart. */
           if (LUMINAIRE == i)
             Serial.printf("e %d %lf\n", LUMINAIRE, energy);
+          else
+            enqueue_message(i, msg_t::GET_ENERGY, nullptr, 0);
           break;
         
         case 'v': /* Get average visibility error at desk <i> since last system restart. */
           if (LUMINAIRE == i)
             Serial.printf("v %d %lf\n", LUMINAIRE, visibility_error / (double) iteration_counter);
+          else
+            enqueue_message(i, msg_t::GET_VISIBILITY_ERROR, nullptr, 0);
           break;
 
         case 'f': /* Get the average flicker error on desk <i> since the last system restart. */
           if (LUMINAIRE == i)
             Serial.printf("f %d %lf\n", LUMINAIRE, flicker_error / (double) iteration_counter);
+          else
+            enqueue_message(i, msg_t::GET_FLICKER_ERROR, nullptr, 0);
           break;
 
         case 'r': /* Get current illuminance reference at luminaire i */
