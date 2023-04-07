@@ -5,43 +5,6 @@ void interface(char *buffer) {
 
   cmd = buffer[0];  
   switch (cmd) {
-    case 'c':
-      std::sscanf(buffer, "%c %c %d %lf", &cmd, &subcmd, &i, &val);
-      if (LUMINAIRE == i) {
-        switch (subcmd) {
-          case 'k': /* Change gain K at luminaire i controller */            
-            controller.set_k(val);
-            Serial.println("ack");
-            break;
-
-          case 'i': /* Change time constant Ti at luminaire i controller */
-            controller.set_ti(val);
-            Serial.println("ack");
-            break;
-
-          case 'b': /* Change gain b at luminaire i controller */
-            controller.set_b(val);
-            Serial.println("ack");
-            break;
-
-          case 't': /* Change time constant Tt at luminaire i controller */
-            controller.set_tt(val);
-            Serial.println("ack");
-            break;
-
-          case 'r': /* Re-calibrate box gain */
-            Serial.println("ack");
-            box_gain = calibrate_gain();
-            Serial.printf("Box gain: %lf\n", box_gain);
-            break;
-            
-          default:
-            Serial.println("err -> Invalid Command, please try again.");
-            return; 
-        }
-      }
-      break;    
-
     case 'd': /* Set directly the duty cycle of the LED at luminaire i */
       std::sscanf(buffer, "%c %d %lf", &cmd, &i, &val);
       if (LUMINAIRE == i) {
@@ -169,17 +132,46 @@ void interface(char *buffer) {
                return;   
             } 
           }
+          break; 
+
+        case 'O': /* Get lower bound on illuminance for Occupied state at desk <i> */
+          if (LUMINAIRE == i)
+            Serial.printf("O %d %lf\n", LUMINAIRE, controller.get_lower_bound_Occupied());
+          else 
+            enqueue_message(i, msg_t::GET_LOWER_BOUND_OCCUPIED, nullptr, 0);          
+          break; 
+
+        case 'U': /* Get lower bound on illuminance for Unoccupied state at desk <i> */
+          if (LUMINAIRE == i)
+            Serial.printf("U %d %lf\n", LUMINAIRE, controller.get_lower_bound_Unoccupied());
+          else 
+            enqueue_message(i, msg_t::GET_LOWER_BOUND_UNOCCUPIED, nullptr, 0);          
+          break;
+
+        case 'L': /* Get current illuminance lower bound at desk <i> */
+          if (LUMINAIRE == i)
+            Serial.printf("L %d %lf\n", LUMINAIRE, controller.get_lower_bound());
+          else 
+            enqueue_message(i, msg_t::GET_LOWER_BOUND, nullptr, 0);          
+          break;
+
+        case 'c': /* Set current energy cost at desk <i> */
+          if (LUMINAIRE == i)
+            Serial.printf("c %d %lf\n", LUMINAIRE, controller.get_cost());
+          else 
+            enqueue_message(i, msg_t::GET_COST, nullptr, 0); 
           break;  
 
-        case 'c': /* Get controller parameters at desk <i> */
-          if (LUMINAIRE == i) {
-            Serial.printf("Controller parameters at luminaire %d:\n", LUMINAIRE);
-            Serial.printf("K = %lf\n", controller.get_k());
-            Serial.printf("Ti = %lf\n", controller.get_ti());
-            Serial.printf("b = %lf\n", controller.get_b());
-            Serial.printf("Tt = %lf\n", controller.get_tt());
-          }
-          break;
+        // FIXME - commented because command 'c' for stage 2 was added
+        // case 'c': /* Get controller parameters at desk <i> */
+        //   if (LUMINAIRE == i) {
+        //     Serial.printf("Controller parameters at luminaire %d:\n", LUMINAIRE);
+        //     Serial.printf("K = %lf\n", controller.get_k());
+        //     Serial.printf("Ti = %lf\n", controller.get_ti());
+        //     Serial.printf("b = %lf\n", controller.get_b());
+        //     Serial.printf("Tt = %lf\n", controller.get_tt());
+        //   }
+        //   break;
 
         default:
           Serial.println("err -> Invalid Command, please try again.");
@@ -206,7 +198,7 @@ void interface(char *buffer) {
     case 'o': /* Set current occupancy state at desk <i> */
       std::sscanf(buffer, "%c %d %lf", &cmd, &i, &val);
       if (LUMINAIRE == i) {
-        controller.set_occupancy(val);
+        controller.set_occupancy((int)val);
         Serial.println("ack");
       }
       else {
@@ -280,7 +272,83 @@ void interface(char *buffer) {
       if (LUMINAIRE == i)
         controller.set_modeOp(subcmd, i);
       Serial.println("ack");
-      break;      
+      break;    
+
+    case 'O': /* Set lower bound on illuminance for Occupied state at desk <i> */
+      std::sscanf(buffer, "%c %d %lf", &cmd, &i, &val);
+      if (LUMINAIRE == i) {
+        controller.set_lower_bound_Occupied(val);
+        Serial.println("ack");
+      }
+      else {
+        float aux = (float) val;
+        enqueue_message(i, msg_t::SET_LOWER_BOUND_OCCUPIED, (uint8_t*) &aux, sizeof(aux));
+      }
+      break;  
+
+    case 'U': /* Set lower bound on illuminance for Unoccupied state at desk <i> */
+      std::sscanf(buffer, "%c %d %lf", &cmd, &i, &val);
+      if (LUMINAIRE == i) {
+        controller.set_lower_bound_Unoccupied(val);
+        Serial.println("ack");
+      }
+      else {
+        float aux = (float) val;
+        enqueue_message(i, msg_t::SET_LOWER_BOUND_UNOCCUPIED, (uint8_t*) &aux, sizeof(aux));
+      }
+      break;
+
+    case 'c': 
+      if (sizeof(buffer) == 4) { /* Set current energy cost at desk <i> */
+        std::sscanf(buffer, "%c %d %lf", &cmd, &i, &val);
+        if (LUMINAIRE == i) {
+          controller.set_cost(val);
+          Serial.println("ack");
+        }
+        else {
+          float aux = (float) val;
+          enqueue_message(i, msg_t::SET_COST, (uint8_t*) &aux, sizeof(aux));
+        }
+      }
+      else if (sizeof(buffer) == 5) { /* Change controller parameters at desk <i> */
+        std::sscanf(buffer, "%c %c %d %lf", &cmd, &subcmd, &i, &val);
+        if (LUMINAIRE == i) {
+          switch (subcmd) {
+            case 'k': /* Change gain K at luminaire i controller */            
+              controller.set_k(val);
+              Serial.println("ack");
+              break;
+
+            case 'i': /* Change time constant Ti at luminaire i controller */
+              controller.set_ti(val);
+              Serial.println("ack");
+              break;
+
+            case 'b': /* Change gain b at luminaire i controller */
+              controller.set_b(val);
+              Serial.println("ack");
+              break;
+
+            case 't': /* Change time constant Tt at luminaire i controller */
+              controller.set_tt(val);
+              Serial.println("ack");
+              break;
+
+            case 'r': /* Re-calibrate box gain */
+              Serial.println("ack");
+              box_gain = calibrate_gain();
+              Serial.printf("Box gain: %lf\n", box_gain);
+              break;
+              
+            default:
+              Serial.println("err -> Invalid Command, please try again.");
+              return; 
+          }
+        }
+        else
+          Serial.println("err -> Not implemented yet");
+      }
+      break;
 
     default:
       Serial.println("err -> Invalid Command, please try again.");
