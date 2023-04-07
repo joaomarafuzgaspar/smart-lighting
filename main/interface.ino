@@ -69,7 +69,7 @@ void interface(char *buffer) {
 
         case 'o': /* Get current occupancy state at desk <i> */
           if (LUMINAIRE == i)
-            Serial.printf("o %d %d\n", LUMINAIRE, controller.get_occupancy());
+            Serial.printf("o %d %d\n", LUMINAIRE, node.get_occupancy());
           else
             enqueue_message(i, msg_t::GET_OCCUPANCY, nullptr, 0);
           break;
@@ -136,28 +136,28 @@ void interface(char *buffer) {
 
         case 'O': /* Get lower bound on illuminance for Occupied state at desk <i> */
           if (LUMINAIRE == i)
-            Serial.printf("O %d %lf\n", LUMINAIRE, controller.get_lower_bound_Occupied());
+            Serial.printf("O %d %lf\n", LUMINAIRE, node.get_lower_bound_Occupied());
           else 
             enqueue_message(i, msg_t::GET_LOWER_BOUND_OCCUPIED, nullptr, 0);          
           break; 
 
         case 'U': /* Get lower bound on illuminance for Unoccupied state at desk <i> */
           if (LUMINAIRE == i)
-            Serial.printf("U %d %lf\n", LUMINAIRE, controller.get_lower_bound_Unoccupied());
+            Serial.printf("U %d %lf\n", LUMINAIRE, node.get_lower_bound_Unoccupied());
           else 
             enqueue_message(i, msg_t::GET_LOWER_BOUND_UNOCCUPIED, nullptr, 0);          
           break;
 
         case 'L': /* Get current illuminance lower bound at desk <i> */
           if (LUMINAIRE == i)
-            Serial.printf("L %d %lf\n", LUMINAIRE, controller.get_lower_bound());
+            Serial.printf("L %d %lf\n", LUMINAIRE, node.get_lower_bound());
           else 
             enqueue_message(i, msg_t::GET_LOWER_BOUND, nullptr, 0);          
           break;
 
         case 'c': /* Set current energy cost at desk <i> */
           if (LUMINAIRE == i)
-            Serial.printf("c %d %lf\n", LUMINAIRE, controller.get_cost());
+            Serial.printf("c %d %lf\n", LUMINAIRE, node.get_cost());
           else 
             enqueue_message(i, msg_t::GET_COST, nullptr, 0); 
           break;  
@@ -198,7 +198,7 @@ void interface(char *buffer) {
     case 'o': /* Set current occupancy state at desk <i> */
       std::sscanf(buffer, "%c %d %lf", &cmd, &i, &val);
       if (LUMINAIRE == i) {
-        controller.set_occupancy((int)val);
+        node.set_occupancy((int)val);
         Serial.println("ack");
       }
       else {
@@ -277,7 +277,7 @@ void interface(char *buffer) {
     case 'O': /* Set lower bound on illuminance for Occupied state at desk <i> */
       std::sscanf(buffer, "%c %d %lf", &cmd, &i, &val);
       if (LUMINAIRE == i) {
-        controller.set_lower_bound_Occupied(val);
+        node.set_lower_bound_Occupied(val);
         Serial.println("ack");
       }
       else {
@@ -289,7 +289,7 @@ void interface(char *buffer) {
     case 'U': /* Set lower bound on illuminance for Unoccupied state at desk <i> */
       std::sscanf(buffer, "%c %d %lf", &cmd, &i, &val);
       if (LUMINAIRE == i) {
-        controller.set_lower_bound_Unoccupied(val);
+        node.set_lower_bound_Unoccupied(val);
         Serial.println("ack");
       }
       else {
@@ -302,7 +302,7 @@ void interface(char *buffer) {
       if (sizeof(buffer) == 4) { /* Set current energy cost at desk <i> */
         std::sscanf(buffer, "%c %d %lf", &cmd, &i, &val);
         if (LUMINAIRE == i) {
-          controller.set_cost(val);
+          node.set_cost(val);
           Serial.println("ack");
         }
         else {

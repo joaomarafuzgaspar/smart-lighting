@@ -8,6 +8,7 @@
 #include "quickselect.h"
 #include "controller.h"
 #include "circular_buffer.h"
+#include "consensus.h"
 
 #define DIFFERENCE(a, b) ((a) > (b) ? (a) - (b) : (b) - (a))
 #define BROADCAST 0
@@ -136,9 +137,12 @@ enum msg_t : uint8_t
   LOWER_BOUND_VALUE,
   SET_COST,
   GET_COST,
-  COST_VALUE
+  COST_VALUE,
+  RUN_CONSENSUS
 };
-char message_type_translations[][29] = {"PING", "OFF", "ON", "END", "ACK", "READY_TO_READ", "SET_DUTY_CYCLE", "GET_DUTY_CYCLE", "DUTY_CYCLE_VALUE", "SET_REFERENCE", "GET_REFERENCE", "REFERENCE_VALUE", "GET_LUMINANCE", "LUMINANCE_VALUE", "SET_OCCUPANCY", "GET_OCCUPANCY", "OCCUPANCY_VALUE", "SET_ANTI_WINDUP", "GET_ANTI_WINDUP", "ANTI_WINDUP_VALUE", "SET_FEEDBACK", "GET_FEEDBACK", "FEEDBACK_VALUE", "GET_EXTERNAL_LUMINANCE", "EXTERNAL_LUMINANCE_VALUE", "GET_POWER", "POWER_VALUE", "GET_ELAPSED_TIME", "ELAPSED_TIME_VALUE", "GET_ENERGY", "ENERGY_VALUE", "GET_VISIBILITY_ERROR", "VISIBILITY_ERROR_VALUE", "GET_FLICKER_ERROR", "FLICKER_ERROR_VALUE", "SET_LOWER_BOUND_OCCUPIED", "GET_LOWER_BOUND_OCCUPIED", "LOWER_BOUND_OCCUPIED_VALUE", "SET_LOWER_BOUND_UNOCCUPIED", "GET_LOWER_BOUND_UNOCCUPIED", "LOWER_BOUND_UNOCCUPIED_VALUE", "GET_LOWER_BOUND", "LOWER_BOUND_VALUE", "SET_COST", "GET_COST", "COST_VALUE"};
+char message_type_translations[][29] = {"PING", "OFF", "ON", "END", "ACK", "READY_TO_READ", "SET_DUTY_CYCLE", "GET_DUTY_CYCLE", "DUTY_CYCLE_VALUE", "SET_REFERENCE", "GET_REFERENCE", "REFERENCE_VALUE", "GET_LUMINANCE", "LUMINANCE_VALUE", "SET_OCCUPANCY", "GET_OCCUPANCY", "OCCUPANCY_VALUE", "SET_ANTI_WINDUP", "GET_ANTI_WINDUP", "ANTI_WINDUP_VALUE", "SET_FEEDBACK", "GET_FEEDBACK", "FEEDBACK_VALUE", "GET_EXTERNAL_LUMINANCE", "EXTERNAL_LUMINANCE_VALUE", "GET_POWER", "POWER_VALUE", "GET_ELAPSED_TIME", "ELAPSED_TIME_VALUE", "GET_ENERGY", "ENERGY_VALUE", "GET_VISIBILITY_ERROR", "VISIBILITY_ERROR_VALUE", "GET_FLICKER_ERROR", "FLICKER_ERROR_VALUE", "SET_LOWER_BOUND_OCCUPIED", "GET_LOWER_BOUND_OCCUPIED", "LOWER_BOUND_OCCUPIED_VALUE", "SET_LOWER_BOUND_UNOCCUPIED", "GET_LOWER_BOUND_UNOCCUPIED", "LOWER_BOUND_UNOCCUPIED_VALUE", "GET_LOWER_BOUND", "LOWER_BOUND_VALUE", "SET_COST", "GET_COST", "COST_VALUE", "RUN_CONSENSUS"};
+
+Node node;
 
 double adc2resistance(int adc_value)
 {
@@ -204,6 +208,7 @@ void setup()
   analogWriteRange(DAC_RANGE);
   analogWriteFreq(60000);
   controller.set_controller(LUMINAIRE);
+  node.set_node();
 
   // Box gain calibration
   // box_gain = calibrate_gain();
@@ -349,12 +354,13 @@ void serial_command()
 
     case msg_t::SET_OCCUPANCY:
       memcpy(&value, data, sizeof(value));
-      controller.set_occupancy((int)value);
+      node.set_occupancy((int)value);
       enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
       break;
 
     case msg_t::GET_OCCUPANCY:
-      value = (float)controller.get_occupancy();
+      value = (float)node.get_occupancy();
       enqueue_message(sender, msg_t::OCCUPANCY_VALUE, (uint8_t *)&value, sizeof(value));
       break;
 
@@ -461,12 +467,13 @@ void serial_command()
 
     case msg_t::SET_LOWER_BOUND_OCCUPIED:
       memcpy(&value, data, sizeof(value));
-      controller.set_lower_bound_Occupied((double)value);
+      node.set_lower_bound_Occupied((double)value);
       enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
       break;
 
     case msg_t::GET_LOWER_BOUND_OCCUPIED:
-      value = (float)controller.get_lower_bound_Occupied();
+      value = (float)node.get_lower_bound_Occupied();
       enqueue_message(sender, msg_t::LOWER_BOUND_OCCUPIED_VALUE, (uint8_t *)&value, sizeof(value));
       break;
       
@@ -477,12 +484,13 @@ void serial_command()
 
     case msg_t::SET_LOWER_BOUND_UNOCCUPIED:
       memcpy(&value, data, sizeof(value));
-      controller.set_lower_bound_Unoccupied((double)value);
+      node.set_lower_bound_Unoccupied((double)value);
       enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
       break;
 
     case msg_t::GET_LOWER_BOUND_UNOCCUPIED:
-      value = (float)controller.get_lower_bound_Unoccupied();
+      value = (float)node.get_lower_bound_Unoccupied();
       enqueue_message(sender, msg_t::LOWER_BOUND_UNOCCUPIED_VALUE, (uint8_t *)&value, sizeof(value));
       break;
       
@@ -492,7 +500,7 @@ void serial_command()
       break;
 
     case msg_t::GET_LOWER_BOUND:
-      value = (float)controller.get_lower_bound();
+      value = (float)node.get_lower_bound();
       enqueue_message(sender, msg_t::LOWER_BOUND_VALUE, (uint8_t *)&value, sizeof(value));
       break;
       
@@ -503,18 +511,23 @@ void serial_command()
 
     case msg_t::SET_COST:
       memcpy(&value, data, sizeof(value));
-      controller.set_cost((double)value);
+      node.set_cost((double)value);
       enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
       break;
 
     case msg_t::GET_COST:
-      value = (float)controller.get_cost();
+      value = (float)node.get_cost();
       enqueue_message(sender, msg_t::COST_VALUE, (uint8_t *)&value, sizeof(value));
       break;
       
     case msg_t::COST_VALUE:
       memcpy(&value, data, sizeof(value));
       Serial.printf("c %d %f\n", sender, value);
+      break;
+
+    case msg_t::RUN_CONSENSUS:
+      Serial.println("FIXME RUN_CONSENSUS -> not implemented yet");
       break;
 
     default:
@@ -774,7 +787,7 @@ void ping_loop()
   if (current_time - time_since_last_ping > PING_TIMER)
   {
     time_since_last_ping = current_time;
-    enqueue_message(0, msg_t::PING, nullptr, 0);
+    enqueue_message(BROADCAST, msg_t::PING, nullptr, 0);
   }
 }
 

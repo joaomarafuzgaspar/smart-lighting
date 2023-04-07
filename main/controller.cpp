@@ -31,14 +31,10 @@ void Controller::set_controller(int LUMINAIRE) {
   _ui = 0;
   _u = 0;
 
-  _occupancy = 0;
   _anti_windup = 1;
   _feedback = 1;
 
   _Kold = _K, _bold = _b;
-
-  _lower_bound_Occupied = 0, _lower_bound_Unoccupied = 0, _cost = 0;
-  _lower_bound = _lower_bound_Unoccupied;
 }
 
 /* PI Controller with Set Point Weighting, Anti-Windup solved by Back-Calculation and Bumpless Transfer*/
@@ -68,13 +64,6 @@ double Controller::get_control_signal(double r, double y, double h) {
 }
 
 double Controller::get_duty_cycle() {return (double) _u / DAC_RANGE;}
-
-void Controller::set_occupancy(int occupancy) {
-  _occupancy = occupancy;
-  set_lower_bound();
-}
-
-int Controller::get_occupancy() {return _occupancy;}
 
 void Controller::set_anti_windup(int anti_windup) {_anti_windup = anti_windup;}
 
@@ -133,31 +122,3 @@ void Controller::set_modeOp(char subcmd, int i) {
       return; 
   }
 }
-
-
-void Controller::set_lower_bound_Occupied(double lower_bound_Occupied) {
-  _lower_bound_Occupied = lower_bound_Occupied;
-  set_lower_bound();
-}
-
-double Controller::get_lower_bound_Occupied() {return _lower_bound_Occupied;}
-
-void Controller::set_lower_bound_Unoccupied(double lower_bound_Unoccupied) {
-  _lower_bound_Unoccupied = lower_bound_Unoccupied;
-  set_lower_bound();
-}
-
-double Controller::get_lower_bound_Unoccupied() {return _lower_bound_Unoccupied;}
-
-void Controller::set_lower_bound() {
-  if (_occupancy == 1)
-    _lower_bound = _lower_bound_Occupied;
-  else if (_occupancy == 0)
-    _lower_bound = _lower_bound_Unoccupied;
-}
-
-double Controller::get_lower_bound() {return _lower_bound;}
-
-void Controller::set_cost(double cost) {_cost = cost;}
-
-double Controller::get_cost() {return _cost;}
