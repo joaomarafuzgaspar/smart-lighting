@@ -94,38 +94,50 @@ void interface(char *buffer) {
         case 'l': /* Get measured illuminance at luminaire i */
           if (LUMINAIRE == i)
             Serial.printf("l %d %lf\n", LUMINAIRE, lux_value);
+          else
+            enqueue_message(i, msg_t::GET_LUMINANCE, nullptr, 0);
           break;
 
         case 'o': /* Get current occupancy state at desk <i> */
           if (LUMINAIRE == i)
             Serial.printf("o %d %d\n", LUMINAIRE, controller.get_occupancy());
+          else
+            enqueue_message(i, msg_t::GET_OCCUPANCY, nullptr, 0);
           break;
 
         case 'a': /* Get anti-windup state at desk <i> */
           if (LUMINAIRE == i)
             Serial.printf("a %d %d\n", LUMINAIRE, controller.get_anti_windup());
+          else
+            enqueue_message(i, msg_t::GET_ANTI_WINDUP, nullptr, 0);
           break;
 
         case 'k': /* Get feedback state at desk <i> */
           if (LUMINAIRE == i)
             Serial.printf("k %d %d\n", LUMINAIRE, controller.get_feedback());
           else 
-            enqueue_message(i, msg_t::INTERFACE_GET_FEEDBACK, nullptr, 0);
+            enqueue_message(i, msg_t::GET_FEEDBACK, nullptr, 0);
           break;
 
         case 'x': /* Get current external illuminance at desk <i> */
           if (LUMINAIRE == i)
             Serial.printf("x %d %lf\n", LUMINAIRE, lux_value - box_gain * duty_cycle);
+          else 
+            enqueue_message(i, msg_t::GET_EXTERNAL_LUMINANCE, nullptr, 0);
           break;
 
         case 'p': /* Get instantaneous power consumption at desk <i> */
           if (LUMINAIRE == i)
             Serial.printf("p %d %lf\n", LUMINAIRE, (controller.get_u() / DAC_RANGE) * MAXIMUM_POWER);
+          else 
+            enqueue_message(i, msg_t::GET_POWER, nullptr, 0);
           break;  
 
         case 't': /* Get elapsed time since last restart */
           if (LUMINAIRE == i)
             Serial.printf("t %d %lf\n", LUMINAIRE, micros() * pow(10, -6));
+          else 
+            enqueue_message(i, msg_t::GET_ELAPSED_TIME, nullptr, 0);
           break;  
         
         case 'b': /* Get last minute buffer of variable <x> of desk <i>. <x> can be “l” or “d”. */
@@ -191,8 +203,10 @@ void interface(char *buffer) {
         controller.set_occupancy(val);
         Serial.println("ack");
       }
-      else
-        Serial.println("err");
+      else {
+        float aux = (float) val;
+        enqueue_message(i, msg_t::SET_OCCUPANCY, (uint8_t*) &aux, sizeof(aux)); 
+      }
       break;
 
     case 'a': /* Set anti-windup state at desk <i> */
@@ -201,8 +215,10 @@ void interface(char *buffer) {
         controller.set_anti_windup(val);
         Serial.println("ack");
       }
-      else
-        Serial.println("err");
+      else {
+        float aux = (float) val;
+        enqueue_message(i, msg_t::SET_ANTI_WINDUP, (uint8_t*) &aux, sizeof(aux)); 
+      }
       break;
 
     case 'k': /* Set feedback on/off at desk <i> */
@@ -214,7 +230,7 @@ void interface(char *buffer) {
       }
       else {
         float aux = (float) val;
-        enqueue_message(i, msg_t::INTERFACE_SET_FEEDBACK, (uint8_t*) &aux, sizeof(aux));
+        enqueue_message(i, msg_t::SET_FEEDBACK, (uint8_t*) &aux, sizeof(aux));
       }
       break;
 

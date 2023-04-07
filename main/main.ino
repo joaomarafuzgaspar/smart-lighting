@@ -94,21 +94,34 @@ enum msg_t : uint8_t
   PING = 0,
   OFF,
   ON,
-  CALIBRATE,
-  ACK,
   END,
-  INTERFACE_SET_FEEDBACK,
-  INTERFACE_GET_FEEDBACK,
-  INTERFACE_VALUE,
+  ACK,
   READY_TO_READ,
   SET_DUTY_CYCLE,
   GET_DUTY_CYCLE,
   DUTY_CYCLE_VALUE,
   SET_REFERENCE,
   GET_REFERENCE, 
-  REFERENCE_VALUE
+  REFERENCE_VALUE,
+  GET_LUMINANCE,
+  LUMINANCE_VALUE,
+  SET_OCCUPANCY,
+  GET_OCCUPANCY, 
+  OCCUPANCY_VALUE,
+  SET_ANTI_WINDUP,
+  GET_ANTI_WINDUP, 
+  ANTI_WINDUP_VALUE,
+  SET_FEEDBACK,
+  GET_FEEDBACK,
+  FEEDBACK_VALUE,
+  GET_EXTERNAL_LUMINANCE,
+  EXTERNAL_LUMINANCE_VALUE,
+  GET_POWER,
+  POWER_VALUE,
+  GET_ELAPSED_TIME,
+  ELAPSED_TIME_VALUE
 };
-char message_type_translations[][23] = {"PING", "OFF", "ON", "CALIBRATE", "ACK", "END", "INTERFACE_SET_FEEDBACK", "INTERFACE_GET_FEEDBACK", "INTERFACE_VALUE", "READY_TO_READ", "SET_DUTY_CYCLE", "GET_DUTY_CYCLE", "DUTY_CYCLE_VALUE", "SET_REFERENCE", "GET_REFERENCE", "REFERENCE_VALUE"};
+char message_type_translations[][25] = {"PING", "OFF", "ON", "END", "ACK", "READY_TO_READ", "SET_DUTY_CYCLE", "GET_DUTY_CYCLE", "DUTY_CYCLE_VALUE", "SET_REFERENCE", "GET_REFERENCE", "REFERENCE_VALUE", "GET_LUMINANCE", "LUMINANCE_VALUE", "SET_OCCUPANCY", "GET_OCCUPANCY", "OCCUPANCY_VALUE", "SET_ANTI_WINDUP", "GET_ANTI_WINDUP", "ANTI_WINDUP_VALUE", "SET_FEEDBACK", "GET_FEEDBACK", "FEEDBACK_VALUE", "GET_EXTERNAL_LUMINANCE", "EXTERNAL_LUMINANCE_VALUE", "GET_POWER", "POWER_VALUE", "GET_ELAPSED_TIME", "ELAPSED_TIME_VALUE"};
 
 double adc2resistance(int adc_value)
 {
@@ -262,23 +275,6 @@ void serial_command()
         Serial.printf("ack from %d\n", sender);
       break;
 
-    case msg_t::INTERFACE_GET_FEEDBACK:
-      value = (float)controller.get_feedback();
-      enqueue_message(sender, msg_t::INTERFACE_VALUE, (uint8_t *)&value, sizeof(value));
-      break;
-
-    case msg_t::INTERFACE_SET_FEEDBACK:
-      memcpy(&value, data, sizeof(value));
-      serial_duty_cycle = controller.get_u() / DAC_RANGE;
-      controller.set_feedback((int)value);
-      enqueue_message(sender, msg_t::ACK, nullptr, 0);
-      break;
-      
-    case msg_t::INTERFACE_VALUE:
-      memcpy(&value, data, sizeof(value));
-      Serial.printf("k %d %d\n", sender, (int)value);
-      break;
-
     case msg_t::READY_TO_READ:
       memcpy(&id_active, data, sizeof(id_active));
       lux_value = adc2lux(read_from_filter());
@@ -322,6 +318,98 @@ void serial_command()
     case msg_t::REFERENCE_VALUE:
       memcpy(&value, data, sizeof(value));
       Serial.printf("r %d %f\n", sender, value);
+      break;
+
+    case msg_t::GET_LUMINANCE:
+      value = (float)adc2lux(read_from_filter());
+      enqueue_message(sender, msg_t::LUMINANCE_VALUE, (uint8_t *)&value, sizeof(value));
+      break;
+
+    case msg_t::LUMINANCE_VALUE:
+      memcpy(&value, data, sizeof(value));
+      Serial.printf("l %d %f\n", sender, value);
+      break;
+
+    case msg_t::SET_OCCUPANCY:
+      memcpy(&value, data, sizeof(value));
+      controller.set_occupancy((int)value);
+      enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      break;
+
+    case msg_t::GET_OCCUPANCY:
+      value = (float)controller.get_occupancy();
+      enqueue_message(sender, msg_t::OCCUPANCY_VALUE, (uint8_t *)&value, sizeof(value));
+      break;
+
+    case msg_t::OCCUPANCY_VALUE:
+      memcpy(&value, data, sizeof(value));
+      Serial.printf("o %d %d\n", sender, (int)value);
+      break;
+
+    case msg_t::SET_ANTI_WINDUP:
+      memcpy(&value, data, sizeof(value));
+      controller.set_anti_windup((int)value);
+      enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      break;
+
+    case msg_t::GET_ANTI_WINDUP:
+      value = (float)controller.get_anti_windup();
+      enqueue_message(sender, msg_t::ANTI_WINDUP_VALUE, (uint8_t *)&value, sizeof(value));
+      break;
+
+    case msg_t::ANTI_WINDUP_VALUE:
+      memcpy(&value, data, sizeof(value));
+      Serial.printf("a %d %d\n", sender, (int)value);
+      break;
+
+    case msg_t::SET_FEEDBACK:
+      memcpy(&value, data, sizeof(value));
+      serial_duty_cycle = controller.get_u() / DAC_RANGE;
+      controller.set_feedback((int)value);
+      enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      break;
+
+    case msg_t::GET_FEEDBACK:
+      value = (float)controller.get_feedback();
+      enqueue_message(sender, msg_t::FEEDBACK_VALUE, (uint8_t *)&value, sizeof(value));
+      break;
+      
+    case msg_t::FEEDBACK_VALUE:
+      memcpy(&value, data, sizeof(value));
+      Serial.printf("k %d %d\n", sender, (int)value);
+      break;
+
+    case msg_t::GET_EXTERNAL_LUMINANCE:
+      if (controller.get_feedback())
+        value = (float)(adc2lux(read_from_filter()) - coupling_gains[LUMINAIRE] * controller.get_duty_cycle());
+      else
+        value = (float)(adc2lux(read_from_filter()) - coupling_gains[LUMINAIRE] * serial_duty_cycle);
+      enqueue_message(sender, msg_t::EXTERNAL_LUMINANCE_VALUE, (uint8_t *)&value, sizeof(value));
+      break;
+      
+    case msg_t::EXTERNAL_LUMINANCE_VALUE:
+      memcpy(&value, data, sizeof(value));
+      Serial.printf("x %d %f\n", sender, value);
+      break;
+
+    case msg_t::GET_POWER:
+      value = (float)((controller.get_u() / DAC_RANGE) * MAXIMUM_POWER);
+      enqueue_message(sender, msg_t::POWER_VALUE, (uint8_t *)&value, sizeof(value));
+      break;
+      
+    case msg_t::POWER_VALUE:
+      memcpy(&value, data, sizeof(value));
+      Serial.printf("p %d %f\n", sender, value);
+      break;
+
+    case msg_t::GET_ELAPSED_TIME:
+      value = (float)(micros() * pow(10, -6));
+      enqueue_message(sender, msg_t::ELAPSED_TIME_VALUE, (uint8_t *)&value, sizeof(value));
+      break;
+      
+    case msg_t::ELAPSED_TIME_VALUE:
+      memcpy(&value, data, sizeof(value));
+      Serial.printf("t %d %f\n", sender, value);
       break;
 
     default:
