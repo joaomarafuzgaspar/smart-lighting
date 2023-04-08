@@ -79,6 +79,7 @@ std::map<int, float> coupling_gains;
 bool is_calibrating_as_master = false, is_calibrating = false;
 uint8_t calibration_master = 0, calibrating_luminaire = 0;
 std::size_t total_calibrations = 0;
+int maxiter = 50;
 
 enum calibration_stage_t : uint8_t
 {
@@ -89,6 +90,12 @@ enum calibration_stage_t : uint8_t
 };
 
 calibration_stage_t calibration_stage, next_stage;
+
+enum consensus_stage_t : uint8_t
+{
+  CONSENSUS_ITERATION,
+  WAIT_FOR_MESSAGES
+}
 
 enum msg_t : uint8_t
 {
@@ -138,9 +145,10 @@ enum msg_t : uint8_t
   SET_COST,
   GET_COST,
   COST_VALUE,
-  RUN_CONSENSUS
+  RUN_CONSENSUS,
+  WAIT_FOR_MESSAGES
 };
-char message_type_translations[][29] = {"PING", "OFF", "ON", "END", "ACK", "READY_TO_READ", "SET_DUTY_CYCLE", "GET_DUTY_CYCLE", "DUTY_CYCLE_VALUE", "SET_REFERENCE", "GET_REFERENCE", "REFERENCE_VALUE", "GET_LUMINANCE", "LUMINANCE_VALUE", "SET_OCCUPANCY", "GET_OCCUPANCY", "OCCUPANCY_VALUE", "SET_ANTI_WINDUP", "GET_ANTI_WINDUP", "ANTI_WINDUP_VALUE", "SET_FEEDBACK", "GET_FEEDBACK", "FEEDBACK_VALUE", "GET_EXTERNAL_LUMINANCE", "EXTERNAL_LUMINANCE_VALUE", "GET_POWER", "POWER_VALUE", "GET_ELAPSED_TIME", "ELAPSED_TIME_VALUE", "GET_ENERGY", "ENERGY_VALUE", "GET_VISIBILITY_ERROR", "VISIBILITY_ERROR_VALUE", "GET_FLICKER_ERROR", "FLICKER_ERROR_VALUE", "SET_LOWER_BOUND_OCCUPIED", "GET_LOWER_BOUND_OCCUPIED", "LOWER_BOUND_OCCUPIED_VALUE", "SET_LOWER_BOUND_UNOCCUPIED", "GET_LOWER_BOUND_UNOCCUPIED", "LOWER_BOUND_UNOCCUPIED_VALUE", "GET_LOWER_BOUND", "LOWER_BOUND_VALUE", "SET_COST", "GET_COST", "COST_VALUE", "RUN_CONSENSUS"};
+char message_type_translations[][29] = {"PING", "OFF", "ON", "END", "ACK", "READY_TO_READ", "SET_DUTY_CYCLE", "GET_DUTY_CYCLE", "DUTY_CYCLE_VALUE", "SET_REFERENCE", "GET_REFERENCE", "REFERENCE_VALUE", "GET_LUMINANCE", "LUMINANCE_VALUE", "SET_OCCUPANCY", "GET_OCCUPANCY", "OCCUPANCY_VALUE", "SET_ANTI_WINDUP", "GET_ANTI_WINDUP", "ANTI_WINDUP_VALUE", "SET_FEEDBACK", "GET_FEEDBACK", "FEEDBACK_VALUE", "GET_EXTERNAL_LUMINANCE", "EXTERNAL_LUMINANCE_VALUE", "GET_POWER", "POWER_VALUE", "GET_ELAPSED_TIME", "ELAPSED_TIME_VALUE", "GET_ENERGY", "ENERGY_VALUE", "GET_VISIBILITY_ERROR", "VISIBILITY_ERROR_VALUE", "GET_FLICKER_ERROR", "FLICKER_ERROR_VALUE", "SET_LOWER_BOUND_OCCUPIED", "GET_LOWER_BOUND_OCCUPIED", "LOWER_BOUND_OCCUPIED_VALUE", "SET_LOWER_BOUND_UNOCCUPIED", "GET_LOWER_BOUND_UNOCCUPIED", "LOWER_BOUND_UNOCCUPIED_VALUE", "GET_LOWER_BOUND", "LOWER_BOUND_VALUE", "SET_COST", "GET_COST", "COST_VALUE", "RUN_CONSENSUS, "WAIT_FOR_MESSAGES"};
 
 Node node;
 
@@ -357,6 +365,7 @@ void serial_command()
       node.set_occupancy((int)value);
       enqueue_message(sender, msg_t::ACK, nullptr, 0);
       enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
+      run_consensus();
       break;
 
     case msg_t::GET_OCCUPANCY:
@@ -470,6 +479,7 @@ void serial_command()
       node.set_lower_bound_Occupied((double)value);
       enqueue_message(sender, msg_t::ACK, nullptr, 0);
       enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
+      run_consensus();
       break;
 
     case msg_t::GET_LOWER_BOUND_OCCUPIED:
@@ -487,6 +497,7 @@ void serial_command()
       node.set_lower_bound_Unoccupied((double)value);
       enqueue_message(sender, msg_t::ACK, nullptr, 0);
       enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
+      run_consensus();
       break;
 
     case msg_t::GET_LOWER_BOUND_UNOCCUPIED:
@@ -514,6 +525,7 @@ void serial_command()
       node.set_cost((double)value);
       enqueue_message(sender, msg_t::ACK, nullptr, 0);
       enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
+      run_consensus();
       break;
 
     case msg_t::GET_COST:
@@ -527,7 +539,12 @@ void serial_command()
       break;
 
     case msg_t::RUN_CONSENSUS:
-      Serial.println("FIXME RUN_CONSENSUS -> not implemented yet");
+      run_consensus()
+      break;
+
+    case msg_t::CONSENSUS_VALUE:
+      ready_luminaires.insert(sender);
+      // Falta fazer o mapping dos vetores de duty-cycle relativamente ao luminaire de origem
       break;
 
     default:
@@ -780,6 +797,60 @@ void calibrate_loop()
   }
 }
 
+void run_consensus()
+{
+  bool is_running_consensus = true;
+  bool is_the_first_iteration = true;
+  consensus_stage = calibration_stage_t::CONSENSUS_ITERATION;
+  ready_luminaires.clear();
+  int consensus_iteration = 0;
+}
+
+void consensus_loop() 
+{
+  if (is_running_consensus)
+  {
+    switch (consensus_stage)
+    {
+      case calibration_stage_t::CONSENSUS_ITERATION:
+        consensus_iteration++;
+        if (is_the_first_iteration)
+        {
+          node.initialization();
+          is_the_first_iteration = false;
+        }
+        node.consensus_iterate();
+
+        // Como enviar o vetor?
+        value = node.d;
+        enqueue_message(BROADCAST, msg_t::CONSENSUS_VALUE, (uint8_t *)&value, sizeof(value);
+        consensus_stage = consensus_stage_t::WAIT_FOR_MESSAGES;
+        break;
+
+      case calibration_stage_t::WAIT_FOR_MESSAGES:
+        if (ready_luminaires.size() == other_luminaires.size())
+        {
+          // Média dos vetores local e recebidos
+          node.d_av = mean();
+          
+          // Computation of lagrangian updates
+          node.y = node.y + node.rho * (node.d - node.d_av);
+
+          // Next iteration
+          if (consensus_iteration != maxiter)
+            consensus_stage = calibration_stage_t::CONSENSUS_ITERATION;
+          else // End of consensus
+            is_running_consensus = false;
+          // Talvez aqui meter um estado de fim
+        }
+        break;
+      
+      default:
+        break;
+    }
+  }
+}
+
 void ping_loop()
 {
   unsigned long current_time = millis();
@@ -805,6 +876,7 @@ void loop()
   serial_command();
   ping_loop();
   calibrate_loop();
+  consensus_loop();
 }
 
 void process_can_frame(can_frame *frm)

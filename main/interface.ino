@@ -200,6 +200,8 @@ void interface(char *buffer) {
       if (LUMINAIRE == i) {
         node.set_occupancy((int)val);
         Serial.println("ack");
+        enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
+        run_consensus();
       }
       else {
         float aux = (float) val;
@@ -279,6 +281,8 @@ void interface(char *buffer) {
       if (LUMINAIRE == i) {
         node.set_lower_bound_Occupied(val);
         Serial.println("ack");
+        enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
+        run_consensus();
       }
       else {
         float aux = (float) val;
@@ -291,6 +295,8 @@ void interface(char *buffer) {
       if (LUMINAIRE == i) {
         node.set_lower_bound_Unoccupied(val);
         Serial.println("ack");
+        enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
+        run_consensus();
       }
       else {
         float aux = (float) val;
@@ -304,6 +310,8 @@ void interface(char *buffer) {
         if (LUMINAIRE == i) {
           node.set_cost(val);
           Serial.println("ack");
+          enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
+          run_consensus();
         }
         else {
           float aux = (float) val;

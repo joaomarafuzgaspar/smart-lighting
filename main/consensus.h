@@ -4,17 +4,20 @@
 #include <vector>
 
 class Node {
-  // double d_av, y, c, cost;
-  // std::vector<double> k, o, l;
-  // std::vector<double> d;
-  // int n, m, index;
-
-  // bool check_feasibility(const std::vector<double> &d) const;
-  // double evaluate_cost(const std::vector<double>& d, double rho) const; 
-  // Node& consensus_iterate(double rho, std::vector<double> &d, double &cost);
-
 public:
+  double rho;
+  double d_av, y, c, cost;
+  std::vector<double> k, o, l;
+  std::vector<double> d;
+  int n, m, index;
+
   void set_node();
+
+  void initialization();
+  bool check_feasibility(const std::vector<double> &d) const;
+  double evaluate_cost(const std::vector<double>& d, double rho) const; 
+  Node& consensus_iterate(double rho, std::vector<double> &d, double &cost);
+
   void set_occupancy(int occupancy);  
   int get_occupancy();
   void set_lower_bound_Occupied(double lower_bound_Occupied);
