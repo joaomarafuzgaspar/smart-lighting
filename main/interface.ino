@@ -90,7 +90,7 @@ void interface(char *buffer) {
 
         case 'x': /* Get current external illuminance at desk <i> */
           if (LUMINAIRE == i)
-            Serial.printf("x %d %lf\n", LUMINAIRE, lux_value - box_gain * duty_cycle);
+            Serial.printf("x %d %lf\n", LUMINAIRE, lux_value - coupling_gains[LUMINAIRE] * duty_cycle);
           else 
             enqueue_message(i, msg_t::GET_EXTERNAL_LUMINANCE, nullptr, 0);
           break;
@@ -136,14 +136,14 @@ void interface(char *buffer) {
 
         case 'O': /* Get lower bound on illuminance for Occupied state at desk <i> */
           if (LUMINAIRE == i)
-            Serial.printf("O %d %lf\n", LUMINAIRE, node.get_lower_bound_Occupied());
+            Serial.printf("O %d %lf\n", LUMINAIRE, node.get_lower_bound_occupied());
           else 
             enqueue_message(i, msg_t::GET_LOWER_BOUND_OCCUPIED, nullptr, 0);          
           break; 
 
         case 'U': /* Get lower bound on illuminance for Unoccupied state at desk <i> */
           if (LUMINAIRE == i)
-            Serial.printf("U %d %lf\n", LUMINAIRE, node.get_lower_bound_Unoccupied());
+            Serial.printf("U %d %lf\n", LUMINAIRE, node.get_lower_bound_unoccupied());
           else 
             enqueue_message(i, msg_t::GET_LOWER_BOUND_UNOCCUPIED, nullptr, 0);          
           break;
@@ -279,10 +279,12 @@ void interface(char *buffer) {
     case 'O': /* Set lower bound on illuminance for Occupied state at desk <i> */
       std::sscanf(buffer, "%c %d %lf", &cmd, &i, &val);
       if (LUMINAIRE == i) {
-        node.set_lower_bound_Occupied(val);
+        node.set_lower_bound_occupied(val);
         Serial.println("ack");
-        enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
-        run_consensus();
+        if (node.get_occupancy()) {
+          enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
+          run_consensus();
+        }
       }
       else {
         float aux = (float) val;
@@ -293,10 +295,12 @@ void interface(char *buffer) {
     case 'U': /* Set lower bound on illuminance for Unoccupied state at desk <i> */
       std::sscanf(buffer, "%c %d %lf", &cmd, &i, &val);
       if (LUMINAIRE == i) {
-        node.set_lower_bound_Unoccupied(val);
+        node.set_lower_bound_unoccupied(val);
         Serial.println("ack");
+        if (!node.get_occupancy()) {
         enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
         run_consensus();
+        }
       }
       else {
         float aux = (float) val;
