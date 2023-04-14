@@ -238,11 +238,14 @@ void interface(char *buffer) {
       std::sscanf(buffer, "%c %c %d", &cmd, &x, &i);
       if (LUMINAIRE == i) {
         if (x == 'l')
-          stream_l = 1;
+          stream_l[LUMINAIRE] = true;
         else if (x == 'd')
-          stream_d = 1;
+          stream_d[LUMINAIRE] = true;
         else if (x == 'j')
-          stream_j = 1;
+          stream_j[LUMINAIRE] = true;
+      }
+      else {
+        enqueue_message(i, msg_t::START_STREAMING, (uint8_t*) &x, sizeof(x));
       }
       break;    
     
@@ -250,13 +253,16 @@ void interface(char *buffer) {
       std::sscanf(buffer, "%c %c %d", &cmd, &x, &i);
       if (LUMINAIRE == i) {
         if (x == 'l')
-          stream_l = 0;
+          stream_l[LUMINAIRE] = false;
         else if (x == 'd')
-          stream_d = 0;   
+          stream_d[LUMINAIRE] = 0;   
         else if (x == 'j')
-          stream_j = 0;  
+          stream_j[LUMINAIRE] = 0;  
+        Serial.println("ack");
       }
-      Serial.println("ack");
+      else {
+        enqueue_message(i, msg_t::STOP_STREAMING, (uint8_t*) &x, sizeof(x));
+      }
       break;  
 
     case 'v': /* Visualization with serial plotter */

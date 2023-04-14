@@ -60,7 +60,6 @@ double visibility_error = 0.0;
 double flicker_error = 0.0;
 double prev_duty_cycle_1 = 0.0;
 double prev_duty_cycle_2 = 0.0;
-int stream_l = 0, stream_d = 0, stream_j = 0;
 CircularBuffer<6000> last_minute_buffer;
 buffer_data data;
 int buffer_d = 0;
@@ -76,6 +75,7 @@ std::set<uint8_t> other_luminaires;
 std::vector<uint8_t> luminaire_ids;
 std::set<uint8_t> ready_luminaires;
 std::map<int, double> coupling_gains;
+std::map<int, bool> stream_l, stream_d, stream_j; 
 bool is_calibrating_as_master = false, is_calibrating = false;
 uint8_t calibration_master = 0, calibrating_luminaire = 0;
 std::size_t total_calibrations = 0;
@@ -152,10 +152,15 @@ enum msg_t : uint8_t
   SET_COST,
   GET_COST,
   COST_VALUE,
+  START_STREAMING,
+  STOP_STREAMING,
+  STREAMING_LUX_VALUE,
+  STREAMING_DUTY_CYCLE_VALUE,
+  STREAMING_POWER_VALUE,
   RUN_CONSENSUS,
   CONSENSUS_VALUE
 };
-char message_type_translations[][29] = {"PING", "OFF", "ON", "END", "ACK", "READY_TO_READ", "SET_DUTY_CYCLE", "GET_DUTY_CYCLE", "DUTY_CYCLE_VALUE", "SET_REFERENCE", "GET_REFERENCE", "REFERENCE_VALUE", "GET_LUMINANCE", "LUMINANCE_VALUE", "SET_OCCUPANCY", "GET_OCCUPANCY", "OCCUPANCY_VALUE", "SET_ANTI_WINDUP", "GET_ANTI_WINDUP", "ANTI_WINDUP_VALUE", "SET_FEEDBACK", "GET_FEEDBACK", "FEEDBACK_VALUE", "GET_EXTERNAL_LUMINANCE", "EXTERNAL_LUMINANCE_VALUE", "GET_POWER", "POWER_VALUE", "GET_ELAPSED_TIME", "ELAPSED_TIME_VALUE", "GET_ENERGY", "ENERGY_VALUE", "GET_VISIBILITY_ERROR", "VISIBILITY_ERROR_VALUE", "GET_FLICKER_ERROR", "FLICKER_ERROR_VALUE", "SET_LOWER_BOUND_OCCUPIED", "GET_LOWER_BOUND_OCCUPIED", "LOWER_BOUND_OCCUPIED_VALUE", "SET_LOWER_BOUND_UNOCCUPIED", "GET_LOWER_BOUND_UNOCCUPIED", "LOWER_BOUND_UNOCCUPIED_VALUE", "GET_LOWER_BOUND", "LOWER_BOUND_VALUE", "SET_COST", "GET_COST", "COST_VALUE", "RUN_CONSENSUS", "CONSENSUS_VALUE"};
+char message_type_translations[][29] = {"PING", "OFF", "ON", "END", "ACK", "READY_TO_READ", "SET_DUTY_CYCLE", "GET_DUTY_CYCLE", "DUTY_CYCLE_VALUE", "SET_REFERENCE", "GET_REFERENCE", "REFERENCE_VALUE", "GET_LUMINANCE", "LUMINANCE_VALUE", "SET_OCCUPANCY", "GET_OCCUPANCY", "OCCUPANCY_VALUE", "SET_ANTI_WINDUP", "GET_ANTI_WINDUP", "ANTI_WINDUP_VALUE", "SET_FEEDBACK", "GET_FEEDBACK", "FEEDBACK_VALUE", "GET_EXTERNAL_LUMINANCE", "EXTERNAL_LUMINANCE_VALUE", "GET_POWER", "POWER_VALUE", "GET_ELAPSED_TIME", "ELAPSED_TIME_VALUE", "GET_ENERGY", "ENERGY_VALUE", "GET_VISIBILITY_ERROR", "VISIBILITY_ERROR_VALUE", "GET_FLICKER_ERROR", "FLICKER_ERROR_VALUE", "SET_LOWER_BOUND_OCCUPIED", "GET_LOWER_BOUND_OCCUPIED", "LOWER_BOUND_OCCUPIED_VALUE", "SET_LOWER_BOUND_UNOCCUPIED", "GET_LOWER_BOUND_UNOCCUPIED", "LOWER_BOUND_UNOCCUPIED_VALUE", "GET_LOWER_BOUND", "LOWER_BOUND_VALUE", "SET_COST", "GET_COST", "COST_VALUE", "START_STREAMING", "STOP_STREAMING", "STREAMING_LUX_VALUE", "STREAMING_DUTY_CYCLE_VALUE", "STREAMING_POWER_VALUE", "RUN_CONSENSUS", "CONSENSUS_VALUE"};
 
 Node node;
 
@@ -217,6 +222,9 @@ void setup()
   flash_get_unique_id(pico_flash_id);
   rp2040.resumeOtherCore();
   LUMINAIRE = pico_flash_id[7];
+  stream_l[LUMINAIRE] = false;
+  stream_j[LUMINAIRE] = false;
+  stream_d[LUMINAIRE] = false;
 
   Serial.begin(115200);
   analogReadResolution(DAC_BITS);
@@ -561,6 +569,55 @@ void serial_command()
       break;
     }
 
+    case msg_t::START_STREAMING:
+    {
+      switch (data[0]) {
+        case 'l':
+          stream_l[sender] = true; break;
+        case 'd':
+          stream_d[sender] = true; break;
+        case 'j':
+          stream_j[sender] = true; break;
+        default: break;
+      }
+      break;
+    }
+
+    case msg_t::STOP_STREAMING:
+    {
+      switch (data[0]) {
+        case 'l':
+          stream_l[sender] = false; break;
+        case 'd':
+          stream_d[sender] = false; break;
+        case 'j':
+          stream_j[sender] = false; break;
+        default: break;
+      }
+      break;
+    }
+
+    case msg_t::STREAMING_LUX_VALUE:
+    {
+      memcpy(&value, data, sizeof(value));
+      Serial.printf("s l %d %lf %d\n", sender, value, millis());
+      break;
+    }
+
+    case msg_t::STREAMING_DUTY_CYCLE_VALUE:
+    {
+      memcpy(&value, data, sizeof(value));
+      Serial.printf("s d %d %lf %d\n", sender, value, millis());
+      break;
+    }
+
+    case msg_t::STREAMING_POWER_VALUE:
+    {
+      memcpy(&value, data, sizeof(value));
+      Serial.printf("s j %d %lf %d\n", sender, value, millis());
+      break;
+    }
+
     default:
       Serial.println("Couldn't decode message");
       break;
@@ -645,14 +702,38 @@ void control_loop()
   else
     prev_duty_cycle_2 = duty_cycle;
 
-  if (stream_l)
-    Serial.printf("s l %d %lf %d\n", LUMINAIRE, lux_value, millis());
+  for (const auto& id_value_pair : stream_l) {
+    if (!id_value_pair.second)
+      continue;
+    if (id_value_pair.first == LUMINAIRE)
+      Serial.printf("s l %d %lf %d\n", LUMINAIRE, lux_value, millis());
+    else {
+      float lux_value_float = (float) lux_value;
+      enqueue_message(id_value_pair.first, msg_t::STREAMING_LUX_VALUE, (uint8_t*) &lux_value_float, sizeof(lux_value_float));
+    }
+  }
 
-  if (stream_d)
-    Serial.printf("s d %d %lf %d\n", LUMINAIRE, duty_cycle, millis());
+  for (const auto& id_value_pair : stream_d) {
+    if (!id_value_pair.second)
+      continue;
+    if (id_value_pair.first == LUMINAIRE)
+      Serial.printf("s d %d %lf %d\n", LUMINAIRE, duty_cycle, millis());
+    else {
+      float duty_cycle_float = (float) duty_cycle;
+      enqueue_message(id_value_pair.first, msg_t::STREAMING_DUTY_CYCLE_VALUE, (uint8_t*) &duty_cycle_float, sizeof(duty_cycle_float));
+    }
+  }
 
-  if (stream_j)
-    Serial.printf("s j %d %lf %d\n", LUMINAIRE, DIFFERENCE(DIFFERENCE(current_run, last_run), sampInterval * pow(10, 3)), millis());
+  for (const auto& id_value_pair : stream_j) {
+    if (!id_value_pair.second)
+      continue;
+    if (id_value_pair.first == LUMINAIRE)
+      Serial.printf("s j %d %lf %d\n", LUMINAIRE, DIFFERENCE(DIFFERENCE(current_run, last_run), sampInterval * pow(10, 3)), millis());
+    else {
+      float j_value_float = (float) (DIFFERENCE(DIFFERENCE(current_run, last_run), sampInterval * pow(10, 3)));
+      enqueue_message(id_value_pair.first, msg_t::STREAMING_POWER_VALUE, (uint8_t*) &j_value_float, sizeof(j_value_float));
+    }
+  }
 
   // Read last minute buffer
   if (buffer_read_counter < buffer_read_size)
