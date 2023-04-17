@@ -13,6 +13,11 @@
 #define DIFFERENCE(a, b) ((a) > (b) ? (a) - (b) : (b) - (a))
 #define BROADCAST 0
 
+#define MAYBE_PRINT_CLIENT_ID(cid) {if (cid) {Serial.print(cid); Serial.print(" ");}}
+#define MAYBE_COPY_CLIENT_ID(cid, bsz, buffer, sz) {if (bsz >= sz) memcpy(&cid, buffer + bsz - sizeof(cid), sizeof(cid));}
+#define MAYBE_ADD_CLIENT_ID(cid, sz) {if (cid) {memcpy(new_data + sz, &cid, sizeof(cid));}}
+#define MAYBE_ADD_CLIENT_SIZE(cid, sz) cid ? sz + sizeof(cid) : sz
+
 // Constants
 const int DAC_RANGE = 4096;
 const int DAC_BITS = 12;
@@ -162,6 +167,11 @@ enum msg_t : uint8_t
 };
 char message_type_translations[][29] = {"PING", "OFF", "ON", "END", "ACK", "READY_TO_READ", "SET_DUTY_CYCLE", "GET_DUTY_CYCLE", "DUTY_CYCLE_VALUE", "SET_REFERENCE", "GET_REFERENCE", "REFERENCE_VALUE", "GET_LUMINANCE", "LUMINANCE_VALUE", "SET_OCCUPANCY", "GET_OCCUPANCY", "OCCUPANCY_VALUE", "SET_ANTI_WINDUP", "GET_ANTI_WINDUP", "ANTI_WINDUP_VALUE", "SET_FEEDBACK", "GET_FEEDBACK", "FEEDBACK_VALUE", "GET_EXTERNAL_LUMINANCE", "EXTERNAL_LUMINANCE_VALUE", "GET_POWER", "POWER_VALUE", "GET_ELAPSED_TIME", "ELAPSED_TIME_VALUE", "GET_ENERGY", "ENERGY_VALUE", "GET_VISIBILITY_ERROR", "VISIBILITY_ERROR_VALUE", "GET_FLICKER_ERROR", "FLICKER_ERROR_VALUE", "SET_LOWER_BOUND_OCCUPIED", "GET_LOWER_BOUND_OCCUPIED", "LOWER_BOUND_OCCUPIED_VALUE", "SET_LOWER_BOUND_UNOCCUPIED", "GET_LOWER_BOUND_UNOCCUPIED", "LOWER_BOUND_UNOCCUPIED_VALUE", "GET_LOWER_BOUND", "LOWER_BOUND_VALUE", "SET_COST", "GET_COST", "COST_VALUE", "START_STREAMING", "STOP_STREAMING", "STREAMING_LUX_VALUE", "STREAMING_DUTY_CYCLE_VALUE", "STREAMING_POWER_VALUE", "RUN_CONSENSUS", "CONSENSUS_VALUE"};
 
+struct processed_msg_t {
+  msg_t type;
+  uint8_t size, sender, data[8];
+};
+
 Node node;
 
 double adc2resistance(int adc_value)
@@ -270,18 +280,21 @@ void serial_command()
     if (!rp2040.fifo.pop_nb((uint32_t *)&frm))
       break;
 
-    msg_t message_type = (msg_t)frm->data[1];
-    uint8_t sender = frm->data[0];
-    uint8_t *data = &frm->data[2];
+    processed_msg_t pm = process_message(frm);
+    msg_t message_type = pm.type;
+    uint8_t sender = pm.sender;
+    uint8_t *data = pm.data;
 
     if (message_type < sizeof(message_type_translations) && message_type != msg_t::PING)
-      Serial.printf("Received message of type %s from %d\n", message_type_translations[message_type], sender);
+      Serial.printf("Received message of type %s from %d (size %lu)\n", message_type_translations[message_type], sender, pm.size);
     else if (message_type != msg_t::PING)
       Serial.printf("Received message of unknown type (%d) from %d\n", message_type, sender);
 
     float value = 0;
     int id_active = 0;
     double lux_value = 0;
+    unsigned short client_id = 0;
+    uint8_t new_data[6] = {0};
 
     switch (message_type)
     {
@@ -316,8 +329,13 @@ void serial_command()
     case msg_t::ACK:
       if (is_calibrating || is_calibrating_as_master)
         ready_luminaires.insert(sender);
-      else
-        Serial.printf("ack from %d\n", sender);
+      else {
+        MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 2);
+        if (client_id)
+          Serial.printf("%d ack from %d\n", client_id, sender);
+        else
+          Serial.printf("ack from %d\n", sender);
+      }
       break;
 
     case msg_t::READY_TO_READ:
@@ -333,7 +351,7 @@ void serial_command()
       memcpy(&value, data, sizeof(value));
       serial_duty_cycle = (double)value;
       analogWrite(LED_PIN, value * DAC_RANGE);
-      enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      enqueue_message(sender, msg_t::ACK, data+sizeof(value), 6-sizeof(value));
       break;
 
     case msg_t::GET_DUTY_CYCLE:
@@ -341,71 +359,96 @@ void serial_command()
         value = (float)controller.get_duty_cycle();
       else
         value = (float)serial_duty_cycle;
-      enqueue_message(sender, msg_t::DUTY_CYCLE_VALUE, (uint8_t *)&value, sizeof(value));
+      memcpy(new_data, &value, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 2);
+      MAYBE_ADD_CLIENT_ID(client_id, sizeof(value));
+      enqueue_message(sender, msg_t::DUTY_CYCLE_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(value)));
       break;
 
     case msg_t::DUTY_CYCLE_VALUE:
       memcpy(&value, data, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, sizeof(value)+2);
+      MAYBE_PRINT_CLIENT_ID(client_id);
       Serial.printf("d %d %f\n", sender, value);
       break;
 
     case msg_t::SET_REFERENCE:
       memcpy(&value, data, sizeof(value));
       r = (double)value;
-      enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      enqueue_message(sender, msg_t::ACK, data+sizeof(value), 6-sizeof(value));
       break;
 
     case msg_t::GET_REFERENCE:
       value = (float)r;
-      enqueue_message(sender, msg_t::REFERENCE_VALUE, (uint8_t *)&value, sizeof(value));
+      memcpy(new_data, &value, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 2);
+      MAYBE_ADD_CLIENT_ID(client_id, sizeof(value));
+      enqueue_message(sender, msg_t::REFERENCE_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(value)));
       break;
 
     case msg_t::REFERENCE_VALUE:
       memcpy(&value, data, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, sizeof(value)+2);
+      MAYBE_PRINT_CLIENT_ID(client_id);
       Serial.printf("r %d %f\n", sender, value);
       break;
 
     case msg_t::GET_LUMINANCE:
       value = (float)adc2lux(read_from_filter());
-      enqueue_message(sender, msg_t::LUMINANCE_VALUE, (uint8_t *)&value, sizeof(value));
+      memcpy(new_data, &value, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 2);
+      MAYBE_ADD_CLIENT_ID(client_id, sizeof(value));
+      enqueue_message(sender, msg_t::LUMINANCE_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(value)));
       break;
 
     case msg_t::LUMINANCE_VALUE:
       memcpy(&value, data, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, sizeof(value)+2);
+      MAYBE_PRINT_CLIENT_ID(client_id);
       Serial.printf("l %d %f\n", sender, value);
       break;
 
     case msg_t::SET_OCCUPANCY:
       memcpy(&value, data, sizeof(value));
       node.set_occupancy((int)value);
-      enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      enqueue_message(sender, msg_t::ACK, data+sizeof(value), 6-sizeof(value));
       enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
       run_consensus();
       break;
 
     case msg_t::GET_OCCUPANCY:
       value = (float)node.get_occupancy();
-      enqueue_message(sender, msg_t::OCCUPANCY_VALUE, (uint8_t *)&value, sizeof(value));
+      memcpy(new_data, &value, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 2);
+      MAYBE_ADD_CLIENT_ID(client_id, sizeof(value));
+      enqueue_message(sender, msg_t::OCCUPANCY_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(value)));
       break;
 
     case msg_t::OCCUPANCY_VALUE:
       memcpy(&value, data, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, sizeof(value)+2);
+      MAYBE_PRINT_CLIENT_ID(client_id);
       Serial.printf("o %d %d\n", sender, (int)value);
       break;
 
     case msg_t::SET_ANTI_WINDUP:
       memcpy(&value, data, sizeof(value));
       controller.set_anti_windup((int)value);
-      enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      enqueue_message(sender, msg_t::ACK, data+sizeof(value), 6-sizeof(value));
       break;
 
     case msg_t::GET_ANTI_WINDUP:
       value = (float)controller.get_anti_windup();
-      enqueue_message(sender, msg_t::ANTI_WINDUP_VALUE, (uint8_t *)&value, sizeof(value));
+      memcpy(new_data, &value, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 2);
+      MAYBE_ADD_CLIENT_ID(client_id, sizeof(value));
+      enqueue_message(sender, msg_t::ANTI_WINDUP_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(value)));
       break;
 
     case msg_t::ANTI_WINDUP_VALUE:
       memcpy(&value, data, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, sizeof(value)+2);
+      MAYBE_PRINT_CLIENT_ID(client_id);
       Serial.printf("a %d %d\n", sender, (int)value);
       break;
 
@@ -413,16 +456,21 @@ void serial_command()
       memcpy(&value, data, sizeof(value));
       serial_duty_cycle = controller.get_u() / DAC_RANGE;
       controller.set_feedback((int)value);
-      enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      enqueue_message(sender, msg_t::ACK, data+sizeof(value), 6-sizeof(value));
       break;
 
     case msg_t::GET_FEEDBACK:
       value = (float)controller.get_feedback();
-      enqueue_message(sender, msg_t::FEEDBACK_VALUE, (uint8_t *)&value, sizeof(value));
+      memcpy(new_data, &value, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 2);
+      MAYBE_ADD_CLIENT_ID(client_id, sizeof(value));
+      enqueue_message(sender, msg_t::FEEDBACK_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(value)));
       break;
       
     case msg_t::FEEDBACK_VALUE:
       memcpy(&value, data, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, sizeof(value)+2);
+      MAYBE_PRINT_CLIENT_ID(client_id);
       Serial.printf("k %d %d\n", sender, (int)value);
       break;
 
@@ -431,68 +479,98 @@ void serial_command()
         value = (float)(adc2lux(read_from_filter()) - coupling_gains[LUMINAIRE] * controller.get_duty_cycle());
       else
         value = (float)(adc2lux(read_from_filter()) - coupling_gains[LUMINAIRE] * serial_duty_cycle);
-      enqueue_message(sender, msg_t::EXTERNAL_LUMINANCE_VALUE, (uint8_t *)&value, sizeof(value));
+      memcpy(new_data, &value, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 2);
+      MAYBE_ADD_CLIENT_ID(client_id, sizeof(value));
+      enqueue_message(sender, msg_t::EXTERNAL_LUMINANCE_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(value)));
       break;
       
     case msg_t::EXTERNAL_LUMINANCE_VALUE:
       memcpy(&value, data, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, sizeof(value)+2);
+      MAYBE_PRINT_CLIENT_ID(client_id);
       Serial.printf("x %d %f\n", sender, value);
       break;
 
     case msg_t::GET_POWER:
       value = (float)((controller.get_u() / DAC_RANGE) * MAXIMUM_POWER);
-      enqueue_message(sender, msg_t::POWER_VALUE, (uint8_t *)&value, sizeof(value));
+      memcpy(new_data, &value, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 2);
+      MAYBE_ADD_CLIENT_ID(client_id, sizeof(value));
+      enqueue_message(sender, msg_t::POWER_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(value)));
       break;
       
     case msg_t::POWER_VALUE:
       memcpy(&value, data, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, sizeof(value)+2);
+      MAYBE_PRINT_CLIENT_ID(client_id);
       Serial.printf("p %d %f\n", sender, value);
       break;
 
     case msg_t::GET_ELAPSED_TIME:
       value = (float)(micros() * pow(10, -6));
-      enqueue_message(sender, msg_t::ELAPSED_TIME_VALUE, (uint8_t *)&value, sizeof(value));
+      memcpy(new_data, &value, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 2);
+      MAYBE_ADD_CLIENT_ID(client_id, sizeof(value));
+      enqueue_message(sender, msg_t::ELAPSED_TIME_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(value)));
       break;
       
     case msg_t::ELAPSED_TIME_VALUE:
       memcpy(&value, data, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, sizeof(value)+2);
+      MAYBE_PRINT_CLIENT_ID(client_id);
       Serial.printf("t %d %f\n", sender, value);
       break;
 
     case msg_t::GET_ENERGY:
       value = (float)energy;
-      enqueue_message(sender, msg_t::ENERGY_VALUE, (uint8_t *)&value, sizeof(value));
+      memcpy(new_data, &value, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 2);
+      MAYBE_ADD_CLIENT_ID(client_id, sizeof(value));
+      enqueue_message(sender, msg_t::ENERGY_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(value)));
       break;
       
     case msg_t::ENERGY_VALUE:
       memcpy(&value, data, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, sizeof(value)+2);
+      MAYBE_PRINT_CLIENT_ID(client_id);
       Serial.printf("e %d %f\n", sender, value);
       break;
 
     case msg_t::GET_VISIBILITY_ERROR:
       value = (float)(visibility_error / (double) iteration_counter);
-      enqueue_message(sender, msg_t::VISIBILITY_ERROR_VALUE, (uint8_t *)&value, sizeof(value));
+      memcpy(new_data, &value, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 2);
+      MAYBE_ADD_CLIENT_ID(client_id, sizeof(value));
+      enqueue_message(sender, msg_t::VISIBILITY_ERROR_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(value)));
       break;
       
     case msg_t::VISIBILITY_ERROR_VALUE:
       memcpy(&value, data, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, sizeof(value)+2);
+      MAYBE_PRINT_CLIENT_ID(client_id);
       Serial.printf("v %d %f\n", sender, value);
       break;
 
     case msg_t::GET_FLICKER_ERROR:
       value = (float)(flicker_error / (double) iteration_counter);
-      enqueue_message(sender, msg_t::FLICKER_ERROR_VALUE, (uint8_t *)&value, sizeof(value));
+      memcpy(new_data, &value, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 2);
+      MAYBE_ADD_CLIENT_ID(client_id, sizeof(value));
+      enqueue_message(sender, msg_t::FLICKER_ERROR_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(value)));
       break;
       
     case msg_t::FLICKER_ERROR_VALUE:
       memcpy(&value, data, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, sizeof(value)+2);
+      MAYBE_PRINT_CLIENT_ID(client_id);
       Serial.printf("f %d %f\n", sender, value);
       break;
 
     case msg_t::SET_LOWER_BOUND_OCCUPIED:
       memcpy(&value, data, sizeof(value));
       node.set_lower_bound_occupied((double)value);
-      enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      enqueue_message(sender, msg_t::ACK, data+sizeof(value), 6-sizeof(value));
       if (node.get_occupancy()) {
         enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
         run_consensus();
@@ -501,18 +579,23 @@ void serial_command()
 
     case msg_t::GET_LOWER_BOUND_OCCUPIED:
       value = (float)node.get_lower_bound_occupied();
-      enqueue_message(sender, msg_t::LOWER_BOUND_OCCUPIED_VALUE, (uint8_t *)&value, sizeof(value));
+      memcpy(new_data, &value, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 2);
+      MAYBE_ADD_CLIENT_ID(client_id, sizeof(value));
+      enqueue_message(sender, msg_t::LOWER_BOUND_OCCUPIED_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(value)));
       break;
       
     case msg_t::LOWER_BOUND_OCCUPIED_VALUE:
       memcpy(&value, data, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, sizeof(value)+2);
+      MAYBE_PRINT_CLIENT_ID(client_id);
       Serial.printf("O %d %f\n", sender, value);
       break;
 
     case msg_t::SET_LOWER_BOUND_UNOCCUPIED:
       memcpy(&value, data, sizeof(value));
       node.set_lower_bound_unoccupied((double)value);
-      enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      enqueue_message(sender, msg_t::ACK, data+sizeof(value), 6-sizeof(value));
       if (!node.get_occupancy())
       {
         enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
@@ -522,39 +605,54 @@ void serial_command()
 
     case msg_t::GET_LOWER_BOUND_UNOCCUPIED:
       value = (float)node.get_lower_bound_unoccupied();
-      enqueue_message(sender, msg_t::LOWER_BOUND_UNOCCUPIED_VALUE, (uint8_t *)&value, sizeof(value));
+      memcpy(new_data, &value, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 2);
+      MAYBE_ADD_CLIENT_ID(client_id, sizeof(value));
+      enqueue_message(sender, msg_t::LOWER_BOUND_UNOCCUPIED_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(value)));
       break;
       
     case msg_t::LOWER_BOUND_UNOCCUPIED_VALUE:
       memcpy(&value, data, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, sizeof(value)+2);
+      MAYBE_PRINT_CLIENT_ID(client_id);
       Serial.printf("U %d %f\n", sender, value);
       break;
 
     case msg_t::GET_LOWER_BOUND:
       value = (float)node.get_lower_bound();
-      enqueue_message(sender, msg_t::LOWER_BOUND_VALUE, (uint8_t *)&value, sizeof(value));
+      memcpy(new_data, &value, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 2);
+      MAYBE_ADD_CLIENT_ID(client_id, sizeof(value));
+      enqueue_message(sender, msg_t::LOWER_BOUND_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(value)));
       break;
       
     case msg_t::LOWER_BOUND_VALUE:
       memcpy(&value, data, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, sizeof(value)+2);
+      MAYBE_PRINT_CLIENT_ID(client_id);
       Serial.printf("L %d %f\n", sender, value);
       break;
 
     case msg_t::SET_COST:
       memcpy(&value, data, sizeof(value));
       node.set_cost((double)value);
-      enqueue_message(sender, msg_t::ACK, nullptr, 0);
+      enqueue_message(sender, msg_t::ACK, data+sizeof(value), 6-sizeof(value));
       enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
       run_consensus();
       break;
 
     case msg_t::GET_COST:
       value = (float)node.get_cost();
-      enqueue_message(sender, msg_t::COST_VALUE, (uint8_t *)&value, sizeof(value));
+      memcpy(new_data, &value, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 2);
+      MAYBE_ADD_CLIENT_ID(client_id, sizeof(value));
+      enqueue_message(sender, msg_t::COST_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(value)));
       break;
       
     case msg_t::COST_VALUE:
       memcpy(&value, data, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, sizeof(value)+2);
+      MAYBE_PRINT_CLIENT_ID(client_id);
       Serial.printf("c %d %f\n", sender, value);
       break;
 
@@ -600,6 +698,8 @@ void serial_command()
     case msg_t::STREAMING_LUX_VALUE:
     {
       memcpy(&value, data, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, sizeof(value)+2);
+      MAYBE_PRINT_CLIENT_ID(client_id);
       Serial.printf("s l %d %lf %d\n", sender, value, millis());
       break;
     }
@@ -607,6 +707,8 @@ void serial_command()
     case msg_t::STREAMING_DUTY_CYCLE_VALUE:
     {
       memcpy(&value, data, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, sizeof(value)+2);
+      MAYBE_PRINT_CLIENT_ID(client_id);
       Serial.printf("s d %d %lf %d\n", sender, value, millis());
       break;
     }
@@ -614,6 +716,8 @@ void serial_command()
     case msg_t::STREAMING_POWER_VALUE:
     {
       memcpy(&value, data, sizeof(value));
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, sizeof(value)+2);
+      MAYBE_PRINT_CLIENT_ID(client_id);
       Serial.printf("s j %d %lf %d\n", sender, value, millis());
       break;
     }
@@ -769,6 +873,21 @@ void control_loop()
   last_run = current_run;
 }
 
+processed_msg_t process_message(can_frame* frm)
+{
+  processed_msg_t result;
+  memset(&result, 0, sizeof(result));
+  result.size = frm->can_dlc - 2;  
+  result.type = (msg_t)frm->data[1];
+  result.sender = frm->data[0];
+  memcpy(result.data, &frm->data[2], result.size);
+  if (frm->can_dlc > 6)
+    result.data[6] = (frm->can_id & 0x0000ff00) >> 8;
+  if (frm->can_dlc > 7)
+    result.data[7] = (frm->can_id & 0x00ff0000) >> 16;
+  return result;
+}
+
 void enqueue_message(uint8_t recipient, msg_t type, uint8_t *message, std::size_t msg_size)
 {
   if (type != msg_t::PING)
@@ -779,6 +898,10 @@ void enqueue_message(uint8_t recipient, msg_t type, uint8_t *message, std::size_
   new_frame->can_dlc = length;
   if (msg_size > 0 && message != nullptr)
     memcpy(new_frame->data + 2, message, length - 2);
+  if (msg_size > length - 2 && message != nullptr)
+    new_frame->can_id |= ((uint32_t) message[length - 2]) << 8;  
+  if (msg_size > length - 1 && message != nullptr)
+    new_frame->can_id |= ((uint32_t) message[length - 1]) << 16;    
   new_frame->data[0] = LUMINAIRE;
   new_frame->data[1] = type;
   rp2040.fifo.push_nb((uint32_t)new_frame);
@@ -1062,3 +1185,6 @@ bool is_signal_stable(const std::vector<double>& lux_values, double threshold) {
     double average_difference = std::accumulate(differences.begin() + 1, differences.end(), 0.0) / (differences.size() - 1);
     return average_difference < threshold;
 }
+
+#undef MAYBE_ADD_CLIENT_ID
+#undef MAYBE_ADD_CLIENT_SIZE
