@@ -174,28 +174,18 @@ void interface(char *buffer) {
         case 'b': /* Get last minute buffer of variable <x> of desk <i>. <x> can be “l” or “d”. */
           std::sscanf(buffer, "%c %c %c %d", &cmd, &subcmd, &x, &i);
           if (LUMINAIRE == i) {
-            switch (x) {
-              case 'l':
-                  buffer_l = !buffer_l;
-                  buffer_read_size = last_minute_buffer.get_used_space();
-                  buffer_read_counter = 0;
-                  MAYBE_PRINT_CLIENT_ID(client_id);
-                  Serial.printf("b l %c", LUMINAIRE);
-                break;
-
-              case 'd':
-                buffer_d = !buffer_d;
-                buffer_read_size = last_minute_buffer.get_used_space();
-                buffer_read_counter = 0;
-                MAYBE_PRINT_CLIENT_ID(client_id);
-                Serial.printf("b d %c", LUMINAIRE);
-                break;
-
-              default:
-                MAYBE_PRINT_CLIENT_ID(client_id);
-                Serial.println("err -> Invalid Command, please try again.");
-               return;   
-            } 
+            if (x == 'l')
+              buffer_l[LUMINAIRE] = !buffer_l[LUMINAIRE];
+            else if (x == 'd')
+              buffer_d[LUMINAIRE] = !buffer_d[LUMINAIRE];
+            buffer_read_size = last_minute_buffer.get_used_space();
+            buffer_read_counter = 0;
+            MAYBE_PRINT_CLIENT_ID(client_id);
+            Serial.printf("b %c %d ", x, LUMINAIRE);
+          }
+          else {
+            enqueue_message(i, msg_t::GET_BUFFER, (uint8_t*) &x, sizeof(x));
+            Serial.printf("b %c %d ", x, i);
           }
           break; 
 
