@@ -1,10 +1,13 @@
 #define MAYBE_PRINT_CLIENT_ID(cid) {if (cid) {Serial.print(cid); Serial.print(" ");}}
+#define MAYBE_ADD_CLIENT_ID(cid, sz) {if (cid) {memcpy(data + sz, &cid, sizeof(cid));}}
+#define MAYBE_ADD_CLIENT_SIZE(cid, sz) cid ? sz + sizeof(cid) : sz
 
 void interface(char *buffer) {
   char cmd, subcmd, x;
   int i;
   double val;
-  unsigned int client_id = atoi(buffer);
+  uint8_t data[8] = {0};
+  unsigned short client_id = (unsigned short) atoi(buffer);
   {
     size_t j = 0, size = strlen(buffer);
     while (j < size && (buffer[j] >= '0' && buffer[j] <= '9' || buffer[j] == ' '))  j++;
@@ -24,7 +27,9 @@ void interface(char *buffer) {
       }
       else {
         float aux = (float) val;
-        enqueue_message(i, msg_t::SET_DUTY_CYCLE, (uint8_t*) &aux, sizeof(aux));
+        memcpy(data, &aux, sizeof(aux));
+        MAYBE_ADD_CLIENT_ID(client_id, sizeof(aux));
+        enqueue_message(i, msg_t::SET_DUTY_CYCLE, data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(aux)));
       }
       break;
 
@@ -39,8 +44,10 @@ void interface(char *buffer) {
             else
               Serial.printf("d %d %lf\n", LUMINAIRE, serial_duty_cycle);
           }
-          else
-            enqueue_message(i, msg_t::GET_DUTY_CYCLE, nullptr, 0);
+          else {
+            MAYBE_ADD_CLIENT_ID(client_id, 0);
+            enqueue_message(i, msg_t::GET_DUTY_CYCLE, data, MAYBE_ADD_CLIENT_SIZE(client_id, 0));
+          }
           break;
 
         case 'e': /* Get average energy consumption at desk <i> since the last system restart. */
@@ -48,8 +55,10 @@ void interface(char *buffer) {
             MAYBE_PRINT_CLIENT_ID(client_id);
             Serial.printf("e %d %lf\n", LUMINAIRE, energy);
           }
-          else
-            enqueue_message(i, msg_t::GET_ENERGY, nullptr, 0);
+          else {
+            MAYBE_ADD_CLIENT_ID(client_id, 0);
+            enqueue_message(i, msg_t::GET_ENERGY, data, MAYBE_ADD_CLIENT_SIZE(client_id, 0));
+          }
           break;
         
         case 'v': /* Get average visibility error at desk <i> since last system restart. */
@@ -57,8 +66,10 @@ void interface(char *buffer) {
             MAYBE_PRINT_CLIENT_ID(client_id);
             Serial.printf("v %d %lf\n", LUMINAIRE, visibility_error / (double) iteration_counter);
           }
-          else
-            enqueue_message(i, msg_t::GET_VISIBILITY_ERROR, nullptr, 0);
+          else {
+            MAYBE_ADD_CLIENT_ID(client_id, 0);
+            enqueue_message(i, msg_t::GET_VISIBILITY_ERROR, data, MAYBE_ADD_CLIENT_SIZE(client_id, 0));
+          }
           break;
 
         case 'f': /* Get the average flicker error on desk <i> since the last system restart. */
@@ -66,8 +77,10 @@ void interface(char *buffer) {
             MAYBE_PRINT_CLIENT_ID(client_id);
             Serial.printf("f %d %lf\n", LUMINAIRE, flicker_error / (double) iteration_counter);
           }
-          else
-            enqueue_message(i, msg_t::GET_FLICKER_ERROR, nullptr, 0);
+          else {
+            MAYBE_ADD_CLIENT_ID(client_id, 0);
+            enqueue_message(i, msg_t::GET_FLICKER_ERROR, data, MAYBE_ADD_CLIENT_SIZE(client_id, 0));
+          }
           break;
 
         case 'r': /* Get current illuminance reference at luminaire i */
@@ -75,8 +88,10 @@ void interface(char *buffer) {
             MAYBE_PRINT_CLIENT_ID(client_id);
             Serial.printf("r %d %lf\n", LUMINAIRE, r);
           }
-          else
-            enqueue_message(i, msg_t::GET_REFERENCE, nullptr, 0);
+          else {
+            MAYBE_ADD_CLIENT_ID(client_id, 0);
+            enqueue_message(i, msg_t::GET_REFERENCE, data, MAYBE_ADD_CLIENT_SIZE(client_id, 0));
+          }
           break;
         
         case 'l': /* Get measured illuminance at luminaire i */
@@ -84,8 +99,10 @@ void interface(char *buffer) {
             MAYBE_PRINT_CLIENT_ID(client_id);
             Serial.printf("l %d %lf\n", LUMINAIRE, lux_value);
           }
-          else
-            enqueue_message(i, msg_t::GET_LUMINANCE, nullptr, 0);
+          else {
+            MAYBE_ADD_CLIENT_ID(client_id, 0);
+            enqueue_message(i, msg_t::GET_LUMINANCE, data, MAYBE_ADD_CLIENT_SIZE(client_id, 0));
+          }
           break;
 
         case 'o': /* Get current occupancy state at desk <i> */
@@ -93,8 +110,10 @@ void interface(char *buffer) {
             MAYBE_PRINT_CLIENT_ID(client_id);
             Serial.printf("o %d %d\n", LUMINAIRE, node.get_occupancy());
           }
-          else
-            enqueue_message(i, msg_t::GET_OCCUPANCY, nullptr, 0);
+          else {
+            MAYBE_ADD_CLIENT_ID(client_id, 0);
+            enqueue_message(i, msg_t::GET_OCCUPANCY, data, MAYBE_ADD_CLIENT_SIZE(client_id, 0));
+          }
           break;
 
         case 'a': /* Get anti-windup state at desk <i> */
@@ -102,8 +121,10 @@ void interface(char *buffer) {
             MAYBE_PRINT_CLIENT_ID(client_id);
             Serial.printf("a %d %d\n", LUMINAIRE, controller.get_anti_windup());
           }
-          else
-            enqueue_message(i, msg_t::GET_ANTI_WINDUP, nullptr, 0);
+          else {
+            MAYBE_ADD_CLIENT_ID(client_id, 0);
+            enqueue_message(i, msg_t::GET_ANTI_WINDUP, data, MAYBE_ADD_CLIENT_SIZE(client_id, 0));
+          }
           break;
 
         case 'k': /* Get feedback state at desk <i> */
@@ -111,8 +132,10 @@ void interface(char *buffer) {
             MAYBE_PRINT_CLIENT_ID(client_id);
             Serial.printf("k %d %d\n", LUMINAIRE, controller.get_feedback());
           }
-          else 
-            enqueue_message(i, msg_t::GET_FEEDBACK, nullptr, 0);
+          else {
+            MAYBE_ADD_CLIENT_ID(client_id, 0);
+            enqueue_message(i, msg_t::GET_FEEDBACK, data, MAYBE_ADD_CLIENT_SIZE(client_id, 0));
+          }
           break;
 
         case 'x': /* Get current external illuminance at desk <i> */
@@ -120,8 +143,10 @@ void interface(char *buffer) {
             MAYBE_PRINT_CLIENT_ID(client_id);
             Serial.printf("x %d %lf\n", LUMINAIRE, lux_value - coupling_gains[LUMINAIRE] * duty_cycle);
           }
-          else 
-            enqueue_message(i, msg_t::GET_EXTERNAL_LUMINANCE, nullptr, 0);
+          else {
+            MAYBE_ADD_CLIENT_ID(client_id, 0);
+            enqueue_message(i, msg_t::GET_EXTERNAL_LUMINANCE, data, MAYBE_ADD_CLIENT_SIZE(client_id, 0));
+          }
           break;
 
         case 'p': /* Get instantaneous power consumption at desk <i> */
@@ -129,8 +154,10 @@ void interface(char *buffer) {
             MAYBE_PRINT_CLIENT_ID(client_id);
             Serial.printf("p %d %lf\n", LUMINAIRE, (controller.get_u() / DAC_RANGE) * MAXIMUM_POWER);
           }
-          else 
-            enqueue_message(i, msg_t::GET_POWER, nullptr, 0);
+          else {
+            MAYBE_ADD_CLIENT_ID(client_id, 0);            
+            enqueue_message(i, msg_t::GET_POWER, data, MAYBE_ADD_CLIENT_SIZE(client_id, 0));
+          }
           break;  
 
         case 't': /* Get elapsed time since last restart */
@@ -138,8 +165,10 @@ void interface(char *buffer) {
             MAYBE_PRINT_CLIENT_ID(client_id);
             Serial.printf("t %d %lf\n", LUMINAIRE, micros() * pow(10, -6));
           }
-          else 
-            enqueue_message(i, msg_t::GET_ELAPSED_TIME, nullptr, 0);
+          else {
+            MAYBE_ADD_CLIENT_ID(client_id, 0);
+            enqueue_message(i, msg_t::GET_ELAPSED_TIME, data, MAYBE_ADD_CLIENT_SIZE(client_id, 0));
+          }
           break;  
         
         case 'b': /* Get last minute buffer of variable <x> of desk <i>. <x> can be “l” or “d”. */
@@ -165,8 +194,10 @@ void interface(char *buffer) {
             MAYBE_PRINT_CLIENT_ID(client_id);
             Serial.printf("O %d %lf\n", LUMINAIRE, node.get_lower_bound_occupied());
           }
-          else 
-            enqueue_message(i, msg_t::GET_LOWER_BOUND_OCCUPIED, nullptr, 0);          
+          else {
+            MAYBE_ADD_CLIENT_ID(client_id, 0);
+            enqueue_message(i, msg_t::GET_LOWER_BOUND_OCCUPIED, data, MAYBE_ADD_CLIENT_SIZE(client_id, 0));     
+          }     
           break; 
 
         case 'U': /* Get lower bound on illuminance for Unoccupied state at desk <i> */
@@ -174,8 +205,10 @@ void interface(char *buffer) {
             MAYBE_PRINT_CLIENT_ID(client_id);
             Serial.printf("U %d %lf\n", LUMINAIRE, node.get_lower_bound_unoccupied());
           }
-          else 
-            enqueue_message(i, msg_t::GET_LOWER_BOUND_UNOCCUPIED, nullptr, 0);          
+          else {
+            MAYBE_ADD_CLIENT_ID(client_id, 0);
+            enqueue_message(i, msg_t::GET_LOWER_BOUND_UNOCCUPIED, data, MAYBE_ADD_CLIENT_SIZE(client_id, 0));   
+          }       
           break;
 
         case 'L': /* Get current illuminance lower bound at desk <i> */
@@ -183,8 +216,10 @@ void interface(char *buffer) {
             MAYBE_PRINT_CLIENT_ID(client_id);
             Serial.printf("L %d %lf\n", LUMINAIRE, node.get_lower_bound());
           }
-          else 
-            enqueue_message(i, msg_t::GET_LOWER_BOUND, nullptr, 0);          
+          else {
+            MAYBE_ADD_CLIENT_ID(client_id, 0);
+            enqueue_message(i, msg_t::GET_LOWER_BOUND, data, MAYBE_ADD_CLIENT_SIZE(client_id, 0));   
+          }       
           break;
 
         case 'c': /* Set current energy cost at desk <i> */
@@ -192,8 +227,10 @@ void interface(char *buffer) {
             MAYBE_PRINT_CLIENT_ID(client_id);
             Serial.printf("c %d %lf\n", LUMINAIRE, node.get_cost());
           }
-          else 
-            enqueue_message(i, msg_t::GET_COST, nullptr, 0); 
+          else {
+            MAYBE_ADD_CLIENT_ID(client_id, 0);
+            enqueue_message(i, msg_t::GET_COST, data, MAYBE_ADD_CLIENT_SIZE(client_id, 0)); 
+          }
           break;  
 
         // FIXME - commented because command 'c' for stage 2 was added
@@ -223,7 +260,9 @@ void interface(char *buffer) {
         }
         else {
           float aux = (float) val;
-          enqueue_message(i, msg_t::SET_REFERENCE, (uint8_t*) &aux, sizeof(aux));
+          memcpy(data, &aux, sizeof(aux));
+          MAYBE_ADD_CLIENT_ID(client_id, sizeof(aux));
+          enqueue_message(i, msg_t::SET_REFERENCE, data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(aux)));
         }
       }
       else {
@@ -242,7 +281,9 @@ void interface(char *buffer) {
       }
       else {
         float aux = (float) val;
-        enqueue_message(i, msg_t::SET_OCCUPANCY, (uint8_t*) &aux, sizeof(aux)); 
+        memcpy(data, &aux, sizeof(aux));
+        MAYBE_ADD_CLIENT_ID(client_id, sizeof(aux));
+        enqueue_message(i, msg_t::SET_OCCUPANCY, data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(aux))); 
       }
       break;
 
@@ -255,7 +296,9 @@ void interface(char *buffer) {
       }
       else {
         float aux = (float) val;
-        enqueue_message(i, msg_t::SET_ANTI_WINDUP, (uint8_t*) &aux, sizeof(aux)); 
+        memcpy(data, &aux, sizeof(aux));
+        MAYBE_ADD_CLIENT_ID(client_id, sizeof(aux));
+        enqueue_message(i, msg_t::SET_ANTI_WINDUP, data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(aux))); 
       }
       break;
 
@@ -269,7 +312,9 @@ void interface(char *buffer) {
       }
       else {
         float aux = (float) val;
-        enqueue_message(i, msg_t::SET_FEEDBACK, (uint8_t*) &aux, sizeof(aux));
+        memcpy(data, &aux, sizeof(aux));
+        MAYBE_ADD_CLIENT_ID(client_id, sizeof(aux));
+        enqueue_message(i, msg_t::SET_FEEDBACK, data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(aux))); 
       }
       break;
 
@@ -284,7 +329,9 @@ void interface(char *buffer) {
           stream_j[LUMINAIRE] = true;
       }
       else {
-        enqueue_message(i, msg_t::START_STREAMING, (uint8_t*) &x, sizeof(x));
+        memcpy(data, &x, sizeof(x));
+        MAYBE_ADD_CLIENT_ID(client_id, sizeof(x));
+        enqueue_message(i, msg_t::START_STREAMING, data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(x))); 
       }
       break;    
     
@@ -301,7 +348,9 @@ void interface(char *buffer) {
         Serial.println("ack");
       }
       else {
-        enqueue_message(i, msg_t::STOP_STREAMING, (uint8_t*) &x, sizeof(x));
+        memcpy(data, &x, sizeof(x));
+        MAYBE_ADD_CLIENT_ID(client_id, sizeof(x));
+        enqueue_message(i, msg_t::STOP_STREAMING, data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(x))); 
       }
       break;  
 
@@ -339,7 +388,9 @@ void interface(char *buffer) {
       }
       else {
         float aux = (float) val;
-        enqueue_message(i, msg_t::SET_LOWER_BOUND_OCCUPIED, (uint8_t*) &aux, sizeof(aux));
+        memcpy(data, &aux, sizeof(aux));
+        MAYBE_ADD_CLIENT_ID(client_id, sizeof(aux));
+        enqueue_message(i, msg_t::SET_LOWER_BOUND_OCCUPIED, data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(aux)));
       }
       break;  
 
@@ -356,7 +407,9 @@ void interface(char *buffer) {
       }
       else {
         float aux = (float) val;
-        enqueue_message(i, msg_t::SET_LOWER_BOUND_UNOCCUPIED, (uint8_t*) &aux, sizeof(aux));
+        memcpy(data, &aux, sizeof(aux));
+        MAYBE_ADD_CLIENT_ID(client_id, sizeof(aux));
+        enqueue_message(i, msg_t::SET_LOWER_BOUND_UNOCCUPIED, data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(aux)));
       }
       break;
 
@@ -372,7 +425,9 @@ void interface(char *buffer) {
         }
         else {
           float aux = (float) val;
-          enqueue_message(i, msg_t::SET_COST, (uint8_t*) &aux, sizeof(aux));
+          memcpy(data, &aux, sizeof(aux));
+          MAYBE_ADD_CLIENT_ID(client_id, sizeof(aux));
+          enqueue_message(i, msg_t::SET_COST, data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(aux)));
         }
       }
       else if (sizeof(buffer) == 5) { /* Change controller parameters at desk <i> */
@@ -422,3 +477,7 @@ void interface(char *buffer) {
       return;      
   }
 }
+
+#undef MAYBE_PRINT_CLIENT_ID
+#undef MAYBE_ADD_CLIENT_ID
+#undef MAYBE_ADD_CLIENT_SIZE
