@@ -62,7 +62,8 @@ double prev_duty_cycle_1 = 0.0;
 double prev_duty_cycle_2 = 0.0;
 CircularBuffer<6000> last_minute_buffer;
 buffer_data data;
-std::map<int, bool> buffer_l, buffer_d;
+std::map<int, bool> buffer_l; 
+int buffer_d = 0;
 int buffer_read_size = 0;
 int buffer_read_counter = 0;
 double serial_duty_cycle = 0;
@@ -160,10 +161,9 @@ enum msg_t : uint8_t
   CONSENSUS_VALUE,
   GET_BUFFER,
   BUFFER_LUX_VALUE,
-  BUFFER_DUTY_CYCLE,
   STOP_BUFFER
 };
-char message_type_translations[][29] = {"PING", "OFF", "ON", "END", "ACK", "READY_TO_READ", "SET_DUTY_CYCLE", "GET_DUTY_CYCLE", "DUTY_CYCLE_VALUE", "SET_REFERENCE", "GET_REFERENCE", "REFERENCE_VALUE", "GET_LUMINANCE", "LUMINANCE_VALUE", "SET_OCCUPANCY", "GET_OCCUPANCY", "OCCUPANCY_VALUE", "SET_ANTI_WINDUP", "GET_ANTI_WINDUP", "ANTI_WINDUP_VALUE", "SET_FEEDBACK", "GET_FEEDBACK", "FEEDBACK_VALUE", "GET_EXTERNAL_LUMINANCE", "EXTERNAL_LUMINANCE_VALUE", "GET_POWER", "POWER_VALUE", "GET_ELAPSED_TIME", "ELAPSED_TIME_VALUE", "GET_ENERGY", "ENERGY_VALUE", "GET_VISIBILITY_ERROR", "VISIBILITY_ERROR_VALUE", "GET_FLICKER_ERROR", "FLICKER_ERROR_VALUE", "SET_LOWER_BOUND_OCCUPIED", "GET_LOWER_BOUND_OCCUPIED", "LOWER_BOUND_OCCUPIED_VALUE", "SET_LOWER_BOUND_UNOCCUPIED", "GET_LOWER_BOUND_UNOCCUPIED", "LOWER_BOUND_UNOCCUPIED_VALUE", "GET_LOWER_BOUND", "LOWER_BOUND_VALUE", "SET_COST", "GET_COST", "COST_VALUE", "START_STREAMING", "STOP_STREAMING", "STREAMING_LUX_VALUE", "STREAMING_DUTY_CYCLE_VALUE", "STREAMING_POWER_VALUE", "RUN_CONSENSUS", "CONSENSUS_VALUE", "GET_BUFFER", "BUFFER_LUX_VALUE", "BUFFER_DUTY_CYCLE", "STOP_BUFFER"};
+char message_type_translations[][29] = {"PING", "OFF", "ON", "END", "ACK", "READY_TO_READ", "SET_DUTY_CYCLE", "GET_DUTY_CYCLE", "DUTY_CYCLE_VALUE", "SET_REFERENCE", "GET_REFERENCE", "REFERENCE_VALUE", "GET_LUMINANCE", "LUMINANCE_VALUE", "SET_OCCUPANCY", "GET_OCCUPANCY", "OCCUPANCY_VALUE", "SET_ANTI_WINDUP", "GET_ANTI_WINDUP", "ANTI_WINDUP_VALUE", "SET_FEEDBACK", "GET_FEEDBACK", "FEEDBACK_VALUE", "GET_EXTERNAL_LUMINANCE", "EXTERNAL_LUMINANCE_VALUE", "GET_POWER", "POWER_VALUE", "GET_ELAPSED_TIME", "ELAPSED_TIME_VALUE", "GET_ENERGY", "ENERGY_VALUE", "GET_VISIBILITY_ERROR", "VISIBILITY_ERROR_VALUE", "GET_FLICKER_ERROR", "FLICKER_ERROR_VALUE", "SET_LOWER_BOUND_OCCUPIED", "GET_LOWER_BOUND_OCCUPIED", "LOWER_BOUND_OCCUPIED_VALUE", "SET_LOWER_BOUND_UNOCCUPIED", "GET_LOWER_BOUND_UNOCCUPIED", "LOWER_BOUND_UNOCCUPIED_VALUE", "GET_LOWER_BOUND", "LOWER_BOUND_VALUE", "SET_COST", "GET_COST", "COST_VALUE", "START_STREAMING", "STOP_STREAMING", "STREAMING_LUX_VALUE", "STREAMING_DUTY_CYCLE_VALUE", "STREAMING_POWER_VALUE", "RUN_CONSENSUS", "CONSENSUS_VALUE", "GET_BUFFER", "BUFFER_LUX_VALUE", "STOP_BUFFER"};
 
 Node node;
 
@@ -229,7 +229,6 @@ void setup()
   stream_j[LUMINAIRE] = false;
   stream_d[LUMINAIRE] = false;
   buffer_l[LUMINAIRE] = false;
-  buffer_d[LUMINAIRE] = false;
 
   Serial.begin(115200);
   analogReadResolution(DAC_BITS);
@@ -279,9 +278,9 @@ void serial_command()
     uint8_t sender = frm->data[0];
     uint8_t *data = &frm->data[2];
 
-    if (message_type < sizeof(message_type_translations) && message_type != msg_t::PING && message_type != msg_t::GET_BUFFER && message_type != msg_t::BUFFER_LUX_VALUE && message_type != msg_t::BUFFER_DUTY_CYCLE && message_type != msg_t::STOP_BUFFER)
+    if (message_type < sizeof(message_type_translations) && message_type != msg_t::PING && message_type != msg_t::GET_BUFFER && message_type != msg_t::BUFFER_LUX_VALUE && message_type != msg_t::STOP_BUFFER)
       Serial.printf("Received message of type %s from %d\n", message_type_translations[message_type], sender);
-    else if (message_type != msg_t::PING && message_type != msg_t::GET_BUFFER && message_type != msg_t::BUFFER_LUX_VALUE && message_type != msg_t::BUFFER_DUTY_CYCLE && message_type != msg_t::STOP_BUFFER)
+    else if (message_type != msg_t::PING && message_type != msg_t::GET_BUFFER && message_type != msg_t::BUFFER_LUX_VALUE && message_type != msg_t::STOP_BUFFER)
       Serial.printf("Received message of unknown type (%d) from %d\n", message_type, sender);
 
     float value = 0;
@@ -627,24 +626,16 @@ void serial_command()
     {
       switch (data[0]) {
         case 'l':
-          buffer_l[sender] = true; break;
-        case 'd': 
-          buffer_d[sender] = true; break;
+          buffer_l[sender] = true; 
+          buffer_read_size = last_minute_buffer.get_used_space();
+          buffer_read_counter = 0;
+          break;
         default: break;
-        buffer_read_size = last_minute_buffer.get_used_space();
-        buffer_read_counter = 0;
       }
       break;
     }
 
     case msg_t::BUFFER_LUX_VALUE:
-    {
-      memcpy(&value, data, sizeof(value));
-      Serial.printf("%f, ", value);
-      break;
-    }
-    
-    case msg_t::BUFFER_DUTY_CYCLE:
     {
       memcpy(&value, data, sizeof(value));
       Serial.printf("%f, ", value);
@@ -784,6 +775,9 @@ void control_loop()
     {
       data = last_minute_buffer.remove_oldest();
 
+      // if (buffer_l)
+      //   Serial.printf("%f, ", data.lux_value);
+
       for (const auto& id_value_pair : buffer_l) {
         if (!id_value_pair.second)
           continue;
@@ -795,16 +789,8 @@ void control_loop()
         }
       }
 
-      for (const auto& id_value_pair : buffer_d) {
-        if (!id_value_pair.second)
-          continue;
-        if (id_value_pair.first == LUMINAIRE)
-          Serial.printf("%f, ", data.duty_cycle);
-        else {
-          float duty_cycle_float = (float) data.duty_cycle;
-          enqueue_message(id_value_pair.first, msg_t::BUFFER_DUTY_CYCLE, (uint8_t*) &duty_cycle_float, sizeof(duty_cycle_float));
-        }
-      }
+      if (buffer_d)
+        Serial.printf("%f, ", data.duty_cycle);
 
       buffer_read_counter++;
     }
@@ -823,20 +809,11 @@ void control_loop()
         buffer_l[id_value_pair.first] = false;
       }
     }
-    
-    for (const auto& id_value_pair : buffer_d) {
-      if (!id_value_pair.second)
-          continue;
-      if (id_value_pair.first == LUMINAIRE) {
-        Serial.println();
-        buffer_d[LUMINAIRE] = false;
-      }
-      else {
-        enqueue_message(id_value_pair.first, msg_t::STOP_BUFFER, nullptr, 0);
-        buffer_d[id_value_pair.first] = false;
-      }
-    }
 
+    if (buffer_d)
+      Serial.println();
+    buffer_d = 0;
+    //buffer_l = 0;
     buffer_read_size = 0;
     buffer_read_counter = 0;
   }

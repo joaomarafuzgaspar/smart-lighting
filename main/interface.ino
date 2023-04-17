@@ -148,7 +148,7 @@ void interface(char *buffer) {
             if (x == 'l')
               buffer_l[LUMINAIRE] = !buffer_l[LUMINAIRE];
             else if (x == 'd')
-              buffer_d[LUMINAIRE] = !buffer_d[LUMINAIRE];
+              buffer_d = !buffer_d;
             buffer_read_size = last_minute_buffer.get_used_space();
             buffer_read_counter = 0;
             MAYBE_PRINT_CLIENT_ID(client_id);
