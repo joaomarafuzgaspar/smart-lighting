@@ -81,30 +81,32 @@ Node& Node::consensus_iterate()
   std::map<int, double> d_best;
   double cost_best = 1000000; // large number
   std::map<int, double> z;
+  double z_dot_k = 0.0;
 
   for (const auto & item : this->node_info) {
     d_best[item.first] = -1;
     z[item.first] = this->rho * item.second.d_av - item.second.y - item.second.c;
+    z_dot_k += z[item.first] * item.second.k;
   }
 
   // unconstrained minimum -> (1 / rho) * z
   std::map<int, double> d_u;
   for (auto & item : z)
     d_u[item.first] = 1 / this->rho * item.second;
+
   Serial.print("d_u = ");
   print_map2(d_u);
   if (check_feasibility(d_u)) {
     Serial.print(" -> Feasible");
     Serial.printf(" -> cost = %lf", evaluate_cost(d_u));
     if (evaluate_cost(d_u) < cost_best)
-      Serial.print(" -> Za best\n");
+      Serial.print(" -> The best\n");
     else
       Serial.print("\n");
   }
-  else {
-    Serial.print(" -> Not Feasible");
-    Serial.printf(" -> cost = %lf\n", evaluate_cost(d_u));
-  }
+  else
+    Serial.print(" -> Not Feasible\n");
+    
   if (check_feasibility(d_u))
   {
     double cost_unconstrained = evaluate_cost(d_u);
@@ -112,30 +114,32 @@ Node& Node::consensus_iterate()
     {
       d_best = d_u;
       cost_best = cost_unconstrained;
+
+      // // If unconstrained solution exists then it's optimal and there's no need to compute the others
+      // for (auto & item : this->node_info)
+      //   item.second.d = d_best[item.first];
+      // return *this;
     }
   }
 
   // compute minimum constrained to linear boundary -> d_bl = (1 / rho) * z - node.k / node.n * (node.o - node.L + (1 / rho) * z' * node.k)
   std::map<int, double> d_bl;
-  double z_dot_k = 0.0;
-  for (const auto & item : this->node_info)
-    z_dot_k += z[item.first] * item.second.k;
   for (const auto & item : this->node_info)
     d_bl[item.first] = 1 / this->rho * z[item.first] - item.second.k / this->n * (this->o - this->L + 1 / this->rho * z_dot_k);
+
   Serial.print("d_bl = ");
   print_map2(d_bl);
   if (check_feasibility(d_bl)) {
     Serial.print(" -> Feasible");
     Serial.printf(" -> cost = %lf", evaluate_cost(d_bl));
     if (evaluate_cost(d_bl) < cost_best)
-      Serial.print(" -> Za best\n");
+      Serial.print(" -> The best\n");
     else
       Serial.print("\n");
   }
-  else {
-    Serial.print(" -> Not Feasible");
-    Serial.printf(" -> cost = %lf\n", evaluate_cost(d_bl));
-  }
+  else
+    Serial.print(" -> Not Feasible\n");
+    
   if (check_feasibility(d_bl))
   {
     double cost_boundary_linear = evaluate_cost(d_bl);
@@ -149,20 +153,20 @@ Node& Node::consensus_iterate()
   // compute minimum constrained to 0 boundary -> (1 / rho) * z
   std::map<int, double> d_b0 = d_u;
   d_b0[this->index] = 0;
+
   Serial.print("d_b0 = ");
   print_map2(d_b0);
   if (check_feasibility(d_b0)) {
     Serial.print(" -> Feasible");
     Serial.printf(" -> cost = %lf", evaluate_cost(d_b0));
     if (evaluate_cost(d_b0) < cost_best)
-      Serial.print(" -> Za best\n");
+      Serial.print(" -> The best\n");
     else
       Serial.print("\n");
   }
-  else {
-    Serial.print(" -> Not Feasible");
-    Serial.printf(" -> cost = %lf\n", evaluate_cost(d_b0));
-  }
+  else
+    Serial.print(" -> Not Feasible\n");
+
   if (check_feasibility(d_b0))
   {
     double cost_boundary_0 = evaluate_cost(d_b0);
@@ -176,20 +180,20 @@ Node& Node::consensus_iterate()
   // compute minimum constrained to 100 boundary -> (1 / rho) * z
   std::map<int, double> d_b1 = d_u;
   d_b1[this->index] = 100;
+
   Serial.print("d_b1 = ");
   print_map2(d_b1);
   if (check_feasibility(d_b1)) {
     Serial.print(" -> Feasible");
     Serial.printf(" -> cost = %lf", evaluate_cost(d_b1));
     if (evaluate_cost(d_b1) < cost_best)
-      Serial.print(" -> Za best\n");
+      Serial.print(" -> The best\n");
     else
       Serial.print("\n");
   }
-  else {
-    Serial.print(" -> Not Feasible");
-    Serial.printf(" -> cost = %lf\n", evaluate_cost(d_b1));
-  }
+  else
+    Serial.print(" -> Not Feasible\n");
+    
   if (check_feasibility(d_b1))
   {
     double cost_boundary_100 = evaluate_cost(d_b1);
@@ -205,20 +209,20 @@ Node& Node::consensus_iterate()
   for (const auto & item : this->node_info)
     d_l0[item.first] = 1 / this->rho * z[item.first] - 1 / this->m * item.second.k * (this->o - this->L) + 1 / this->rho / this->m * item.second.k * (this->node_info[this->index].k * z[this->index] - z_dot_k);  
   d_l0[this->index] = 0;
+
   Serial.print("d_l0 = ");
   print_map2(d_l0);
   if (check_feasibility(d_l0)) {
     Serial.print(" -> Feasible");
     Serial.printf(" -> cost = %lf", evaluate_cost(d_l0));
     if (evaluate_cost(d_l0) < cost_best)
-      Serial.print(" -> Za best\n");
+      Serial.print(" -> The best\n");
     else
       Serial.print("\n");
   }
-  else {
-    Serial.print(" -> Not Feasible");
-    Serial.printf(" -> cost = %lf\n", evaluate_cost(d_l0));
-  }
+  else
+    Serial.print(" -> Not Feasible\n");
+
   if (check_feasibility(d_l0))
   {
     double cost_linear_0 = evaluate_cost(d_l0);
@@ -234,27 +238,25 @@ Node& Node::consensus_iterate()
   for (const auto & item : this->node_info)
     d_l1[item.first] = 1 / this->rho * z[item.first] - 1 / this->m * item.second.k * (this->o - this->L + 100 * this->node_info[this->index].k) + 1 / this->rho / this->m * item.second.k * (this->node_info[this->index].k * z[this->index] - z_dot_k);
   d_l1[this->index] = 100;
+
   Serial.print("d_l1 = ");
   print_map2(d_l1);
   if (check_feasibility(d_l1)) {
     Serial.print(" -> Feasible");
     Serial.printf(" -> cost = %lf", evaluate_cost(d_l1));
     if (evaluate_cost(d_l1) < cost_best)
-      Serial.print(" -> Za best\n");
+      Serial.print(" -> The best\n");
     else
       Serial.print("\n");
   }
-  else {
-    Serial.print(" -> Not Feasible");
-    Serial.printf(" -> cost = %lf\n", evaluate_cost(d_l1));
-  }
+  else
+    Serial.print(" -> Not Feasible\n");
+    
   if (check_feasibility(d_l1))
   {
     double cost_linear_100 = evaluate_cost(d_l1);
     if (cost_linear_100 < cost_best)
     {
-      Serial.print("d_l1 = ");
-      print_map2(d_l1);
       d_best = d_l1;
       cost_best = cost_linear_100;
     }
