@@ -1203,6 +1203,7 @@ void consensus_loop()
               Serial.printf("duty cycle: %lf\n", item.second.d_av);
             }
             r = k_dot_d + node.o;
+            controller.update_control_signal(node.node_info[LUMINAIRE].d_av / 100 * DAC_RANGE);
           }
         }
         break;
