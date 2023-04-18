@@ -43,7 +43,7 @@ void Node::initialization(const std::map<int, double>& coupling_gains, double lu
   }
   // pow(norm(d), 2)
   this->n = std::accumulate(this->node_info.begin(), this->node_info.end(), 0.0, [](double acc, const std::pair<int, NodeInfo>& ni){return acc + ni.second.k * ni.second.k;});
-  this->m = this->n - pow(coupling_gains.at(LUMINAIRE), 2);
+  this->m = this->n - pow(this->node_info[LUMINAIRE].k, 2);
   this->node_info[LUMINAIRE].c = this->_cost;
   this->o = lux_value - coupling_gains.at(LUMINAIRE) * duty_cycle;
   this->L = this->_lower_bound;
@@ -90,7 +90,7 @@ Node& Node::consensus_iterate()
   // unconstrained minimum -> (1 / rho) * z
   std::map<int, double> d_u;
   for (auto & item : z)
-    d_u[item.first] = item.second;
+    d_u[item.first] = 1 / this->rho * item.second;
   Serial.print("d_u = ");
   print_map2(d_u);
   if (check_feasibility(d_u)) {
@@ -101,8 +101,10 @@ Node& Node::consensus_iterate()
     else
       Serial.print("\n");
   }
-  else
-    Serial.print(" -> Not Feasible\n");
+  else {
+    Serial.print(" -> Not Feasible");
+    Serial.printf(" -> cost = %lf\n", evaluate_cost(d_u));
+  }
   if (check_feasibility(d_u))
   {
     double cost_unconstrained = evaluate_cost(d_u);
@@ -130,8 +132,10 @@ Node& Node::consensus_iterate()
     else
       Serial.print("\n");
   }
-  else
-    Serial.print(" -> Not Feasible\n");
+  else {
+    Serial.print(" -> Not Feasible");
+    Serial.printf(" -> cost = %lf\n", evaluate_cost(d_bl));
+  }
   if (check_feasibility(d_bl))
   {
     double cost_boundary_linear = evaluate_cost(d_bl);
@@ -155,8 +159,10 @@ Node& Node::consensus_iterate()
     else
       Serial.print("\n");
   }
-  else
-    Serial.print(" -> Not Feasible\n");
+  else {
+    Serial.print(" -> Not Feasible");
+    Serial.printf(" -> cost = %lf\n", evaluate_cost(d_b0));
+  }
   if (check_feasibility(d_b0))
   {
     double cost_boundary_0 = evaluate_cost(d_b0);
@@ -180,8 +186,10 @@ Node& Node::consensus_iterate()
     else
       Serial.print("\n");
   }
-  else
-    Serial.print(" -> Not Feasible\n");
+  else {
+    Serial.print(" -> Not Feasible");
+    Serial.printf(" -> cost = %lf\n", evaluate_cost(d_b1));
+  }
   if (check_feasibility(d_b1))
   {
     double cost_boundary_100 = evaluate_cost(d_b1);
@@ -207,8 +215,10 @@ Node& Node::consensus_iterate()
     else
       Serial.print("\n");
   }
-  else
-    Serial.print(" -> Not Feasible\n");
+  else {
+    Serial.print(" -> Not Feasible");
+    Serial.printf(" -> cost = %lf\n", evaluate_cost(d_l0));
+  }
   if (check_feasibility(d_l0))
   {
     double cost_linear_0 = evaluate_cost(d_l0);
@@ -234,8 +244,10 @@ Node& Node::consensus_iterate()
     else
       Serial.print("\n");
   }
-  else
-    Serial.print(" -> Not Feasible\n");
+  else {
+    Serial.print(" -> Not Feasible");
+    Serial.printf(" -> cost = %lf\n", evaluate_cost(d_l1));
+  }
   if (check_feasibility(d_l1))
   {
     double cost_linear_100 = evaluate_cost(d_l1);

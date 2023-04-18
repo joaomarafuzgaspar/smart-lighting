@@ -29,6 +29,7 @@ void Controller::set_controller(int LUMINAIRE) {
 
   _up = 0;
   _ui = 0;
+  _uff = 0;
   _u = 0;
 
   _anti_windup = 1;
@@ -37,19 +38,20 @@ void Controller::set_controller(int LUMINAIRE) {
   _Kold = _K, _bold = _b;
 }
 
-/* PI Controller with Set Point Weighting, Anti-Windup solved by Back-Calculation and Bumpless Transfer*/
+/* PI Controller with Set Point Weighting, Anti-Windup solved by Back-Calculation and Bumpless Transfer */
 double Controller::get_control_signal(double r, double y, double h) {  
   double v;
 
   // Update integral for Bumpless Transfer
-  _ui += _Kold * (_bold * r - y) - _K * (_b * r - y);
-  _Kold = _K, _bold = _b;
+  // _ui += _Kold * (_bold * r - y) - _K * (_b * r - y);
+  // _Kold = _K, _bold = _b;
 
   // Update proportional part
-  _up = _K * (_b * r - y);
+  //_up = _K * (_b * r - y);
 
   // Temporary output
-  v = _up + _ui;
+  //v = _up + _ui;
+  v = _uff + _ui;
 
   // Anti-Windup - Bound the actuation signal
   if (_anti_windup)
@@ -122,3 +124,5 @@ void Controller::set_modeOp(char subcmd, int i) {
       return; 
   }
 }
+
+void Controller::update_control_signal(double u_consensus) {_ui = 0, _uff = u_consensus;}

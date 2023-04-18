@@ -25,8 +25,10 @@ public:
 
   void set_modeOp(char subcmd, int i);
 
+  void update_control_signal(double u_consensus);
+
 private:
-  double _K, _Ti, _b, _Tt, _up, _ui, _u;
+  double _K, _Ti, _b, _Tt, _up, _ui, _uff, _u;
   int _anti_windup, _feedback;
   double _Kold, _bold;
 };
