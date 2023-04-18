@@ -2,12 +2,14 @@
 #define MAYBE_ADD_CLIENT_ID(cid, sz) {if (cid) {memcpy(data + sz, &cid, sizeof(cid));}}
 #define MAYBE_ADD_CLIENT_SIZE(cid, sz) cid ? sz + sizeof(cid) : sz
 
+#include "set_remove.h"
+
 void interface(char *buffer) {
   char cmd, subcmd, x;
   int i;
   double val;
   uint8_t data[8] = {0};
-  unsigned short client_id = (unsigned short) atoi(buffer);
+  unsigned short client_id = (unsigned short) atoll(buffer);
   {
     size_t j = 0, size = strlen(buffer);
     while (j < size && (buffer[j] >= '0' && buffer[j] <= '9' || buffer[j] == ' '))  j++;
@@ -320,13 +322,14 @@ void interface(char *buffer) {
 
     case 's': /* Start stream of real-time variable <x> of desk <i>. <x> can be “l”, “d” or "j". */
       std::sscanf(buffer, "%c %c %d", &cmd, &x, &i);
+      Serial.printf("The current client id is %d\n", client_id);
       if (LUMINAIRE == i) {
         if (x == 'l')
-          stream_l[LUMINAIRE] = true;
+          stream_l[LUMINAIRE].insert(client_id);
         else if (x == 'd')
-          stream_d[LUMINAIRE] = true;
+          stream_d[LUMINAIRE].insert(client_id);
         else if (x == 'j')
-          stream_j[LUMINAIRE] = true;
+          stream_j[LUMINAIRE].insert(client_id);
       }
       else {
         memcpy(data, &x, sizeof(x));
@@ -338,12 +341,24 @@ void interface(char *buffer) {
     case 'S': /* Stop stream of real-time variable <x> of desk <i>. <x> can be “l”, “d” or "j". */
       std::sscanf(buffer, "%c %c %d", &cmd, &x, &i);
       if (LUMINAIRE == i) {
-        if (x == 'l')
-          stream_l[LUMINAIRE] = false;
-        else if (x == 'd')
-          stream_d[LUMINAIRE] = 0;   
-        else if (x == 'j')
-          stream_j[LUMINAIRE] = 0;  
+        if (x == 'l') {
+          if (!client_id) 
+            stream_l[LUMINAIRE] = {};
+          else
+            set_remove(stream_l[LUMINAIRE], client_id);
+        }
+        else if (x == 'd') {
+          if (!client_id) 
+            stream_d[LUMINAIRE] = {};
+          else
+            set_remove(stream_d[LUMINAIRE], client_id);
+        }
+        else if (x == 'j') {
+          if (!client_id) 
+            stream_j[LUMINAIRE] = {};
+          else
+            set_remove(stream_j[LUMINAIRE], client_id);
+        }
         MAYBE_PRINT_CLIENT_ID(client_id);
         Serial.println("ack");
       }

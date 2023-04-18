@@ -9,6 +9,7 @@
 #include "controller.h"
 #include "circular_buffer.h"
 #include "consensus.h"
+#include "set_remove.h"
 
 #define DIFFERENCE(a, b) ((a) > (b) ? (a) - (b) : (b) - (a))
 #define BROADCAST 0
@@ -79,7 +80,7 @@ std::set<uint8_t> other_luminaires;
 std::vector<uint8_t> luminaire_ids;
 std::set<uint8_t> ready_luminaires;
 std::map<int, double> coupling_gains;
-std::map<int, bool> stream_l, stream_d, stream_j; 
+std::map<int, std::set<unsigned short>> stream_l, stream_d, stream_j; 
 bool is_calibrating_as_master = false, is_calibrating = false;
 uint8_t calibration_master = 0, calibrating_luminaire = 0;
 std::size_t total_calibrations = 0;
@@ -234,9 +235,9 @@ void setup()
   flash_get_unique_id(pico_flash_id);
   rp2040.resumeOtherCore();
   LUMINAIRE = pico_flash_id[7];
-  stream_l[LUMINAIRE] = false;
-  stream_j[LUMINAIRE] = false;
-  stream_d[LUMINAIRE] = false;
+  stream_l[LUMINAIRE];
+  stream_j[LUMINAIRE];
+  stream_d[LUMINAIRE];
   buffer_l[LUMINAIRE] = false;
 
   Serial.begin(115200);
@@ -672,13 +673,14 @@ void serial_command()
 
     case msg_t::START_STREAMING:
     {
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 3);
       switch (data[0]) {
         case 'l':
-          stream_l[sender] = true; break;
+          stream_l[sender].insert(client_id); break;
         case 'd':
-          stream_d[sender] = true; break;
+          stream_d[sender].insert(client_id); break;
         case 'j':
-          stream_j[sender] = true; break;
+          stream_j[sender].insert(client_id); break;
         default: break;
       }
       break;
@@ -686,13 +688,23 @@ void serial_command()
 
     case msg_t::STOP_STREAMING:
     {
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 3);
       switch (data[0]) {
         case 'l':
-          stream_l[sender] = false; break;
+          if (client_id)
+            set_remove(stream_l[sender], client_id);
+          else
+            stream_l[sender] = {}; break;
         case 'd':
-          stream_d[sender] = false; break;
+          if (client_id)
+            set_remove(stream_d[sender], client_id);
+          else
+            stream_d[sender] = {}; break;
         case 'j':
-          stream_j[sender] = false; break;
+          if (client_id)
+            set_remove(stream_j[sender], client_id);
+          else
+            stream_j[sender] = {}; break;
         default: break;
       }
       break;
@@ -838,36 +850,67 @@ void control_loop()
   else
     prev_duty_cycle_2 = duty_cycle;
 
+  uint8_t new_data[8] = {0};
   for (const auto& id_value_pair : stream_l) {
-    if (!id_value_pair.second)
+    if (id_value_pair.second.size() == 0)
       continue;
-    if (id_value_pair.first == LUMINAIRE)
+    if (id_value_pair.first == LUMINAIRE) {
+      for (unsigned short client_id : id_value_pair.second) {
+        if (client_id == 0)
+          continue;
+        Serial.printf("%d ", client_id);
+      }
       Serial.printf("s l %d %lf %d\n", LUMINAIRE, lux_value, millis());
+    }
     else {
       float lux_value_float = (float) lux_value;
-      enqueue_message(id_value_pair.first, msg_t::STREAMING_LUX_VALUE, (uint8_t*) &lux_value_float, sizeof(lux_value_float));
+      memcpy(new_data, &lux_value_float, sizeof(lux_value_float));
+      for (unsigned short client_id : id_value_pair.second) {
+        MAYBE_ADD_CLIENT_ID(client_id, sizeof(lux_value_float));
+        enqueue_message(id_value_pair.first, msg_t::STREAMING_LUX_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(lux_value_float)));
+      }
     }
   }
 
   for (const auto& id_value_pair : stream_d) {
-    if (!id_value_pair.second)
+    if (id_value_pair.second.size() == 0)
       continue;
-    if (id_value_pair.first == LUMINAIRE)
+    if (id_value_pair.first == LUMINAIRE) {
+      for (unsigned short client_id : id_value_pair.second) {
+        if (client_id == 0)
+          continue;
+        Serial.printf("%d ", client_id);
+      }
       Serial.printf("s d %d %lf %d\n", LUMINAIRE, duty_cycle, millis());
+    }
     else {
       float duty_cycle_float = (float) duty_cycle;
-      enqueue_message(id_value_pair.first, msg_t::STREAMING_DUTY_CYCLE_VALUE, (uint8_t*) &duty_cycle_float, sizeof(duty_cycle_float));
+      memcpy(new_data, &duty_cycle_float, sizeof(duty_cycle_float));
+      for (short int client_id : id_value_pair.second) {
+        MAYBE_ADD_CLIENT_ID(client_id, sizeof(duty_cycle_float));
+        enqueue_message(id_value_pair.first, msg_t::STREAMING_DUTY_CYCLE_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(duty_cycle_float)));
+      }
     }
   }
 
   for (const auto& id_value_pair : stream_j) {
-    if (!id_value_pair.second)
+    if (id_value_pair.second.size() == 0)
       continue;
-    if (id_value_pair.first == LUMINAIRE)
+    if (id_value_pair.first == LUMINAIRE) {
+      for (short int client_id : id_value_pair.second) {
+        if (client_id == 0)
+          continue;
+        Serial.printf("%d ", client_id);
+      }
       Serial.printf("s j %d %lf %d\n", LUMINAIRE, DIFFERENCE(DIFFERENCE(current_run, last_run), sampInterval * pow(10, 3)), millis());
+    }
     else {
-      float j_value_float = (float) (DIFFERENCE(DIFFERENCE(current_run, last_run), sampInterval * pow(10, 3)));
-      enqueue_message(id_value_pair.first, msg_t::STREAMING_POWER_VALUE, (uint8_t*) &j_value_float, sizeof(j_value_float));
+      float j_value_float = (float) DIFFERENCE(DIFFERENCE(current_run, last_run), sampInterval * pow(10, 3));
+      memcpy(new_data, &j_value_float, sizeof(j_value_float));
+      for (short int client_id : id_value_pair.second) {
+        MAYBE_ADD_CLIENT_ID(client_id, sizeof(j_value_float));
+        enqueue_message(id_value_pair.first, msg_t::STREAMING_DUTY_CYCLE_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(j_value_float)));
+      }
     }
   }
 
