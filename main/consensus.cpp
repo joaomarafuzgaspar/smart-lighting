@@ -41,12 +41,16 @@ void Node::initialization(const std::map<int, double>& coupling_gains, double lu
     this->node_info[item.first].k = item.second / 100;
     this->node_info[item.first].c = 0;
   }
-  // pow(norm(d), 2)
   this->n = std::accumulate(this->node_info.begin(), this->node_info.end(), 0.0, [](double acc, const std::pair<int, NodeInfo>& ni){return acc + ni.second.k * ni.second.k;});
   this->m = this->n - pow(this->node_info[LUMINAIRE].k, 2);
   this->node_info[LUMINAIRE].c = this->_cost;
   this->o = lux_value - coupling_gains.at(LUMINAIRE) * duty_cycle;
-  this->L = this->_lower_bound;
+
+  double max_lower_bound = this->o;  
+  for (const auto & item : this->node_info)
+    max_lower_bound += 100 * item.second.k;
+  this->L = min(max(this->_lower_bound, this->o), max_lower_bound);
+  Serial.printf("this->L = %lf, this->_lower_bound = %lf\n", this->L, this->_lower_bound);
 }
 
 bool Node::check_feasibility(const std::map<int, double>& d) const
@@ -56,7 +60,6 @@ bool Node::check_feasibility(const std::map<int, double>& d) const
   if (d.at(this->index) < -tol || d.at(this->index) > 100 + tol)
     return false;
 
-  //d_dot_k = std::inner_product(d.begin(), d.end(), node_info.begin(), 0.0, std::plus<>(), [](double d, const NodeInfo& ni){return d * ni.k;});
   double d_dot_k = 0.0;
   for (const auto & item : this->node_info)
     d_dot_k += d.at(item.first) * item.second.k;
@@ -109,17 +112,10 @@ Node& Node::consensus_iterate()
     
   if (check_feasibility(d_u))
   {
-    double cost_unconstrained = evaluate_cost(d_u);
-    if (cost_unconstrained < cost_best)
-    {
-      d_best = d_u;
-      cost_best = cost_unconstrained;
-
-      // // If unconstrained solution exists then it's optimal and there's no need to compute the others
-      // for (auto & item : this->node_info)
-      //   item.second.d = d_best[item.first];
-      // return *this;
-    }
+    // If unconstrained solution exists then it's optimal and there's no need to compute the others
+    for (auto & item : this->node_info)
+      item.second.d = d_u[item.first];
+    return *this;
   }
 
   // compute minimum constrained to linear boundary -> d_bl = (1 / rho) * z - node.k / node.n * (node.o - node.L + (1 / rho) * z' * node.k)
