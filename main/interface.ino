@@ -186,7 +186,9 @@ void interface(char *buffer) {
             Serial.printf("b %c %d ", x, LUMINAIRE);
           }
           else {
-            enqueue_message(i, msg_t::GET_BUFFER, (uint8_t*) &x, sizeof(x));
+            memcpy(data, &x, sizeof(x));
+            MAYBE_ADD_CLIENT_ID(client_id, sizeof(x));
+            enqueue_message(i, msg_t::GET_BUFFER, data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(x)));
             Serial.printf("b %c %d ", x, i);
           }
           break; 
