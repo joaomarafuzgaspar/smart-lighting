@@ -29,6 +29,7 @@ const double Vcc = 3.3;
 const double MAXIMUM_POWER = 2.65 * 5.8e-3;
 const int sampInterval = 10;
 const int CALIBRATION_START_DELAY = 10000;
+const int CALIBRATION_MIN_TIME = 1000;
 
 const int R = 10e3;
 const double b = 6.1521825181113625;
@@ -52,7 +53,6 @@ enum inter_core_cmds
 
 // Globals
 int counter = 0;
-double box_gain;
 std::stringstream command_ss;
 char command_buffer[64] = "";
 Controller controller;
@@ -246,10 +246,6 @@ void setup()
   analogWriteFreq(60000);
   controller.set_controller(LUMINAIRE);
   node.set_node();
-
-  // Box gain calibration
-  // box_gain = calibrate_gain();
-  Serial.printf("Box gain: %lf\n", box_gain);
   time_since_last_ping = millis();
 }
 
@@ -416,7 +412,6 @@ void serial_command()
       memcpy(&value, data, sizeof(value));
       node.set_occupancy((int)value);
       enqueue_message(sender, msg_t::ACK, data+sizeof(value), 6-sizeof(value));
-      enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
       run_consensus();
       break;
 
@@ -575,10 +570,8 @@ void serial_command()
       memcpy(&value, data, sizeof(value));
       node.set_lower_bound_occupied((double)value);
       enqueue_message(sender, msg_t::ACK, data+sizeof(value), 6-sizeof(value));
-      if (node.get_occupancy()) {
-        enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
+      if (node.get_occupancy())
         run_consensus();
-      }
       break;
 
     case msg_t::GET_LOWER_BOUND_OCCUPIED:
@@ -601,10 +594,7 @@ void serial_command()
       node.set_lower_bound_unoccupied((double)value);
       enqueue_message(sender, msg_t::ACK, data+sizeof(value), 6-sizeof(value));
       if (!node.get_occupancy())
-      {
-        enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
         run_consensus();
-      }
       break;
 
     case msg_t::GET_LOWER_BOUND_UNOCCUPIED:
@@ -641,7 +631,6 @@ void serial_command()
       memcpy(&value, data, sizeof(value));
       node.set_cost((double)value);
       enqueue_message(sender, msg_t::ACK, data+sizeof(value), 6-sizeof(value));
-      enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
       run_consensus();
       break;
 
@@ -661,7 +650,7 @@ void serial_command()
       break;
 
     case msg_t::RUN_CONSENSUS:
-      run_consensus();
+      run_consensus(false);
       break;
 
     case msg_t::CONSENSUS_VALUE:
@@ -1034,10 +1023,10 @@ void master_calibrate_routine()
   next_stage = calibration_stage_t::CALIBRATING;
   controller.set_feedback(false);
   analogWrite(LED_PIN, 0);
-  for (const uint8_t luminaire : other_luminaires)
-  {
-    enqueue_message(luminaire, msg_t::OFF, nullptr, 0);
-  }
+  enqueue_message(BROADCAST, msg_t::OFF, nullptr, 0);
+  r = 0;
+  float r_float = (float) r;
+  enqueue_message(BROADCAST, msg_t::SET_REFERENCE, (uint8_t*) &r_float, sizeof(r_float));
 }
 
 void calibrate_loop()
@@ -1066,10 +1055,8 @@ void calibrate_loop()
 
     case calibration_stage_t::CALIBRATING:
       // Wait for capacitor discharge
-      // FIXME - function that check signal stability may not work as requested
-      // recent_lux_readings = last_minute_buffer.get_recent_lux_values(100);
-      // if (!calibration_started && (current_time - calibration_start_time > CALIBRATION_START_DELAY || is_signal_stable(recent_lux_readings, 0.1)))
-      if (!calibration_started && current_time - calibration_start_time > CALIBRATION_START_DELAY)
+      recent_lux_readings = last_minute_buffer.get_recent_lux_values(100);
+      if (!calibration_started && (current_time - calibration_start_time > CALIBRATION_START_DELAY || is_signal_stable(recent_lux_readings, 0.035)) && current_time - calibration_start_time > CALIBRATION_MIN_TIME)
       {
         calibration_started = true;
         Serial.println("Comencing calibration now");
@@ -1130,6 +1117,16 @@ void calibrate_loop()
 
 void run_consensus()
 {
+  run_consensus(true);
+}
+
+void run_consensus(bool first)
+{
+  // Consensus is only allowed after calibrating
+  if (coupling_gains.size() != other_luminaires.size() + 2)
+    return;
+  if (first)
+    enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);    
   is_running_consensus = true;
   is_the_first_iteration = true;
   consensus_stage = consensus_stage_t::CONSENSUS_ITERATION;
@@ -1146,12 +1143,10 @@ void consensus_loop()
       case consensus_stage_t::CONSENSUS_ITERATION:
       {
         consensus_iteration++;
-        Serial.printf("Iteration number: %d\n", consensus_iteration);
+        // Serial.printf("Iteration number: %d\n", consensus_iteration);
         if (is_the_first_iteration)
         {
-          //lux_value = adc2lux(read_from_filter());
-          //duty_cycle = controller.get_control_signal(r, lux_value, h) / DAC_RANGE;
-          node.initialization(coupling_gains, lux_value, duty_cycle, LUMINAIRE);
+          node.initialization(coupling_gains, LUMINAIRE);
           is_the_first_iteration = false;
         }
 
@@ -1161,13 +1156,14 @@ void consensus_loop()
         // Communications - Send messages
         uint8_t data[5] = {0};
         for (const auto & item : node.node_info) {
-          Serial.printf("First: %d, Second: %lf\n", item.first, item.second);
+          // Serial.printf("First: %d, Second: %lf\n", item.first, item.second);
           data[0] = (uint8_t) item.first;
           float value = (float) item.second.d;
           memcpy(data+1, &value, sizeof(value));
           enqueue_message(BROADCAST, CONSENSUS_VALUE, data, sizeof(data));
         }
         consensus_stage = consensus_stage_t::WAIT_FOR_MESSAGES;
+        d_other_luminaires.clear();
         break;
       }
 
@@ -1195,10 +1191,11 @@ void consensus_loop()
             consensus_stage = consensus_stage_t::CONSENSUS_ITERATION;
           else // End of consensus
           {
-            Serial.printf("Chegou ao final do consensus\n");
+            // Serial.printf("Chegou ao final do consensus\n");
             is_running_consensus = false;
             double k_dot_d = 0.0;
-            for (const auto & item : node.node_info) {
+            for (auto & item : node.node_info) {
+              item.second.d_av = min(max(item.second.d_av, 0), 100);
               k_dot_d += item.second.k * item.second.d_av;
               Serial.printf("duty cycle: %lf\n", item.second.d_av);
             }
@@ -1287,17 +1284,19 @@ void print_map(std::map<int, double> m)
 }
 
 bool is_signal_stable(const std::vector<double>& lux_values, double threshold) {
-    if (lux_values.empty()) {
-        return false;
-    }
-    
-    std::vector<double> differences(lux_values.size());
-    std::adjacent_difference(lux_values.begin(), lux_values.end(), differences.begin(), [](double a, double b) {
-        return std::abs(a - b);
-    });
+  if (lux_values.empty())
+    return false;
 
-    double average_difference = std::accumulate(differences.begin() + 1, differences.end(), 0.0) / (differences.size() - 1);
-    return average_difference < threshold;
+  double mean_x = 0.0, mean_x2 = 0.0;
+
+  for (double value : lux_values)
+  {
+    mean_x += value;
+    mean_x2 += value * value;
+  }
+  mean_x /= lux_values.size(), mean_x2 /= lux_values.size();
+
+  return mean_x2 - mean_x * mean_x < threshold;
 }
 
 #undef MAYBE_ADD_CLIENT_ID

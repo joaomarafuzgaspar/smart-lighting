@@ -280,7 +280,6 @@ void interface(char *buffer) {
         node.set_occupancy((int)val);
         MAYBE_PRINT_CLIENT_ID(client_id);
         Serial.println("ack");
-        enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
         run_consensus();
       }
       else {
@@ -398,10 +397,8 @@ void interface(char *buffer) {
         node.set_lower_bound_occupied(val);
         MAYBE_PRINT_CLIENT_ID(client_id);
         Serial.println("ack");
-        if (node.get_occupancy()) {
-          enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
+        if (node.get_occupancy())
           run_consensus();
-        }
       }
       else {
         float aux = (float) val;
@@ -417,10 +414,8 @@ void interface(char *buffer) {
         node.set_lower_bound_unoccupied(val);
         MAYBE_PRINT_CLIENT_ID(client_id);
         Serial.println("ack");
-        if (!node.get_occupancy()) {
-        enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
-        run_consensus();
-        }
+        if (!node.get_occupancy())
+          run_consensus();
       }
       else {
         float aux = (float) val;
@@ -437,7 +432,6 @@ void interface(char *buffer) {
           node.set_cost(val);
           MAYBE_PRINT_CLIENT_ID(client_id);
           Serial.println("ack");
-          enqueue_message(BROADCAST, msg_t::RUN_CONSENSUS, nullptr, 0);
           run_consensus();
         }
         else {
@@ -470,12 +464,6 @@ void interface(char *buffer) {
             case 't': /* Change time constant Tt at luminaire i controller */
               controller.set_tt(val);
               Serial.println("ack");
-              break;
-
-            case 'r': /* Re-calibrate box gain */
-              Serial.println("ack");
-              box_gain = calibrate_gain();
-              Serial.printf("Box gain: %lf\n", box_gain);
               break;
               
             default:
