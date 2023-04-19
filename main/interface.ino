@@ -189,6 +189,7 @@ void interface(char *buffer) {
             memcpy(data, &x, sizeof(x));
             MAYBE_ADD_CLIENT_ID(client_id, sizeof(x));
             enqueue_message(i, msg_t::GET_BUFFER, data, MAYBE_ADD_CLIENT_SIZE(client_id, sizeof(x)));
+            MAYBE_PRINT_CLIENT_ID(client_id);
             Serial.printf("b %c %d ", x, i);
           }
           break; 

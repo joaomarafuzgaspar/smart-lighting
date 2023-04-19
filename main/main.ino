@@ -68,7 +68,7 @@ double prev_duty_cycle_1 = 0.0;
 double prev_duty_cycle_2 = 0.0;
 CircularBuffer<6000> last_minute_buffer;
 buffer_data data;
-std::map<int, bool> buffer_l, buffer_d;
+std::map<int, short int> buffer_l, buffer_d;
 int buffer_read_size = 0;
 int buffer_read_counter = 0;
 double serial_duty_cycle = 0;
@@ -728,17 +728,18 @@ void serial_command()
 
     case msg_t::GET_BUFFER:
     {
+      MAYBE_COPY_CLIENT_ID(client_id, pm.size, data, 3);
       switch (data[0]) {
         case 'l':
-          buffer_l[sender] = true; 
+          buffer_l[sender] = client_id; 
           buffer_read_size = last_minute_buffer.get_used_space();
           buffer_read_counter = 0;
           break;
         case 'd':
-          buffer_d[sender] = true; 
+          buffer_d[sender] = client_id; 
           buffer_read_size = last_minute_buffer.get_used_space();
           buffer_read_counter = 0;
-          break;
+          break;        
         default: break;
       }
       break;
@@ -916,24 +917,31 @@ void control_loop()
       data = last_minute_buffer.remove_oldest();
 
       for (const auto& id_value_pair : buffer_l) {
-        if (!id_value_pair.second)
+        if (id_value_pair.second == -1)
           continue;
-        if (id_value_pair.first == LUMINAIRE)
+        if (id_value_pair.first == LUMINAIRE) {
+          MAYBE_PRINT_CLIENT_ID(id_value_pair.second);
           Serial.printf("%f, ", data.lux_value);
+        }
         else {
           float lux_value_float = (float) data.lux_value;
-          enqueue_message(id_value_pair.first, msg_t::BUFFER_VALUE, (uint8_t*) &lux_value_float, sizeof(lux_value_float));
+          memcpy(new_data, &lux_value_float, sizeof(lux_value_float));
+          MAYBE_ADD_CLIENT_ID(id_value_pair.second, sizeof(lux_value_float));
+          enqueue_message(id_value_pair.first, msg_t::BUFFER_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(id_value_pair.second, sizeof(lux_value_float)));
         }
       }
 
       for (const auto& id_value_pair : buffer_d) {
-        if (!id_value_pair.second)
+        if (id_value_pair.second == -1)
           continue;
-        if (id_value_pair.first == LUMINAIRE)
+        if (id_value_pair.first == LUMINAIRE) {
+          MAYBE_PRINT_CLIENT_ID(id_value_pair.second);
           Serial.printf("%f, ", data.duty_cycle);
+        }
         else {
           float duty_cycle_float = (float) data.duty_cycle;
-          enqueue_message(id_value_pair.first, msg_t::BUFFER_VALUE, (uint8_t*) &duty_cycle_float, sizeof(duty_cycle_float));
+          memcpy(new_data, &duty_cycle_float, sizeof(duty_cycle_float));
+          enqueue_message(id_value_pair.first, msg_t::BUFFER_VALUE, new_data, MAYBE_ADD_CLIENT_SIZE(id_value_pair.second, sizeof(duty_cycle_float)));
         }
       }
 
@@ -943,28 +951,28 @@ void control_loop()
   else
   {
     for (const auto& id_value_pair : buffer_l) {
-      if (!id_value_pair.second)
+      if (id_value_pair.second == -1)
           continue;
       if (id_value_pair.first == LUMINAIRE) {
         Serial.println();
-        buffer_l[LUMINAIRE] = false;
+        buffer_l[LUMINAIRE] = -1;
       }
       else {
         enqueue_message(id_value_pair.first, msg_t::STOP_BUFFER, nullptr, 0);
-        buffer_l[id_value_pair.first] = false;
+        buffer_l[id_value_pair.first] = -1;
       }
     }
 
     for (const auto& id_value_pair : buffer_d) {
-      if (!id_value_pair.second)
+      if (id_value_pair.second == -1)
           continue;
       if (id_value_pair.first == LUMINAIRE) {
         Serial.println();
-        buffer_d[LUMINAIRE] = false;
+        buffer_d[LUMINAIRE] = -1;
       }
       else {
         enqueue_message(id_value_pair.first, msg_t::STOP_BUFFER, nullptr, 0);
-        buffer_d[id_value_pair.first] = false;
+        buffer_d[id_value_pair.first] = -1;
       }
     }
 
