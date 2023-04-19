@@ -50,7 +50,6 @@ void Node::initialization(const std::map<int, double>& coupling_gains, int LUMIN
   for (const auto & item : this->node_info)
     max_lower_bound += 100 * item.second.k;
   this->L = min(max(this->_lower_bound, this->o), max_lower_bound);
-  Serial.printf("this->L = %lf, this->_lower_bound = %lf\n", this->L, this->_lower_bound);
 }
 
 bool Node::check_feasibility(const std::map<int, double>& d) const
