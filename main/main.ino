@@ -1056,7 +1056,6 @@ void calibrate_loop()
     case calibration_stage_t::CALIBRATING:
       // Wait for capacitor discharge
       recent_lux_readings = last_minute_buffer.get_recent_lux_values(100);
-      // if (!calibration_started && current_time - calibration_start_time > CALIBRATION_START_DELAY)
       if (!calibration_started && (current_time - calibration_start_time > CALIBRATION_START_DELAY || is_signal_stable(recent_lux_readings, 0.035)) && current_time - calibration_start_time > CALIBRATION_MIN_TIME)
       {
         calibration_started = true;
@@ -1144,10 +1143,10 @@ void consensus_loop()
       case consensus_stage_t::CONSENSUS_ITERATION:
       {
         consensus_iteration++;
-        Serial.printf("Iteration number: %d\n", consensus_iteration);
+        // Serial.printf("Iteration number: %d\n", consensus_iteration);
         if (is_the_first_iteration)
         {
-          node.initialization(coupling_gains, lux_value, duty_cycle, LUMINAIRE);
+          node.initialization(coupling_gains, LUMINAIRE);
           is_the_first_iteration = false;
         }
 
@@ -1157,7 +1156,7 @@ void consensus_loop()
         // Communications - Send messages
         uint8_t data[5] = {0};
         for (const auto & item : node.node_info) {
-          Serial.printf("First: %d, Second: %lf\n", item.first, item.second);
+          // Serial.printf("First: %d, Second: %lf\n", item.first, item.second);
           data[0] = (uint8_t) item.first;
           float value = (float) item.second.d;
           memcpy(data+1, &value, sizeof(value));
@@ -1192,7 +1191,7 @@ void consensus_loop()
             consensus_stage = consensus_stage_t::CONSENSUS_ITERATION;
           else // End of consensus
           {
-            Serial.printf("Chegou ao final do consensus\n");
+            // Serial.printf("Chegou ao final do consensus\n");
             is_running_consensus = false;
             double k_dot_d = 0.0;
             for (auto & item : node.node_info) {
@@ -1200,8 +1199,7 @@ void consensus_loop()
               k_dot_d += item.second.k * item.second.d_av;
               Serial.printf("duty cycle: %lf\n", item.second.d_av);
             }
-            // r = k_dot_d + node.o;
-            r = k_dot_d + coupling_gains[-1];
+            r = k_dot_d + node.o;
             controller.update_control_signal(node.node_info[LUMINAIRE].d_av / 100 * DAC_RANGE);
           }
         }

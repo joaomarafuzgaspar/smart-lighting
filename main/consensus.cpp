@@ -30,7 +30,7 @@ void Node::set_node() {
   _lower_bound = _lower_bound_unoccupied;
 }
 
-void Node::initialization(const std::map<int, double>& coupling_gains, double lux_value, double duty_cycle, int LUMINAIRE) {
+void Node::initialization(const std::map<int, double>& coupling_gains, int LUMINAIRE) {
   this->index = LUMINAIRE;
   for (const auto & item : coupling_gains) {
     if (item.first == -1)
@@ -44,7 +44,7 @@ void Node::initialization(const std::map<int, double>& coupling_gains, double lu
   this->n = std::accumulate(this->node_info.begin(), this->node_info.end(), 0.0, [](double acc, const std::pair<int, NodeInfo>& ni){return acc + ni.second.k * ni.second.k;});
   this->m = this->n - pow(this->node_info[LUMINAIRE].k, 2);
   this->node_info[LUMINAIRE].c = this->_cost;
-  this->o = lux_value - coupling_gains.at(LUMINAIRE) * duty_cycle;
+  this->o = coupling_gains.at(-1);
 
   double max_lower_bound = this->o;  
   for (const auto & item : this->node_info)
@@ -97,18 +97,18 @@ Node& Node::consensus_iterate()
   for (auto & item : z)
     d_u[item.first] = 1 / this->rho * item.second;
 
-  Serial.print("d_u = ");
-  print_map2(d_u);
-  if (check_feasibility(d_u)) {
-    Serial.print(" -> Feasible");
-    Serial.printf(" -> cost = %lf", evaluate_cost(d_u));
-    if (evaluate_cost(d_u) < cost_best)
-      Serial.print(" -> The best\n");
-    else
-      Serial.print("\n");
-  }
-  else
-    Serial.print(" -> Not Feasible\n");
+  // Serial.print("d_u = ");
+  // print_map2(d_u);
+  // if (check_feasibility(d_u)) {
+  //   Serial.print(" -> Feasible");
+  //   Serial.printf(" -> cost = %lf", evaluate_cost(d_u));
+  //   if (evaluate_cost(d_u) < cost_best)
+  //     Serial.print(" -> The best\n");
+  //   else
+  //     Serial.print("\n");
+  // }
+  // else
+  //   Serial.print(" -> Not Feasible\n");
     
   if (check_feasibility(d_u))
   {
@@ -123,18 +123,18 @@ Node& Node::consensus_iterate()
   for (const auto & item : this->node_info)
     d_bl[item.first] = 1 / this->rho * z[item.first] - item.second.k / this->n * (this->o - this->L + 1 / this->rho * z_dot_k);
 
-  Serial.print("d_bl = ");
-  print_map2(d_bl);
-  if (check_feasibility(d_bl)) {
-    Serial.print(" -> Feasible");
-    Serial.printf(" -> cost = %lf", evaluate_cost(d_bl));
-    if (evaluate_cost(d_bl) < cost_best)
-      Serial.print(" -> The best\n");
-    else
-      Serial.print("\n");
-  }
-  else
-    Serial.print(" -> Not Feasible\n");
+  // Serial.print("d_bl = ");
+  // print_map2(d_bl);
+  // if (check_feasibility(d_bl)) {
+  //   Serial.print(" -> Feasible");
+  //   Serial.printf(" -> cost = %lf", evaluate_cost(d_bl));
+  //   if (evaluate_cost(d_bl) < cost_best)
+  //     Serial.print(" -> The best\n");
+  //   else
+  //     Serial.print("\n");
+  // }
+  // else
+  //   Serial.print(" -> Not Feasible\n");
     
   if (check_feasibility(d_bl))
   {
@@ -150,18 +150,18 @@ Node& Node::consensus_iterate()
   std::map<int, double> d_b0 = d_u;
   d_b0[this->index] = 0;
 
-  Serial.print("d_b0 = ");
-  print_map2(d_b0);
-  if (check_feasibility(d_b0)) {
-    Serial.print(" -> Feasible");
-    Serial.printf(" -> cost = %lf", evaluate_cost(d_b0));
-    if (evaluate_cost(d_b0) < cost_best)
-      Serial.print(" -> The best\n");
-    else
-      Serial.print("\n");
-  }
-  else
-    Serial.print(" -> Not Feasible\n");
+  // Serial.print("d_b0 = ");
+  // print_map2(d_b0);
+  // if (check_feasibility(d_b0)) {
+  //   Serial.print(" -> Feasible");
+  //   Serial.printf(" -> cost = %lf", evaluate_cost(d_b0));
+  //   if (evaluate_cost(d_b0) < cost_best)
+  //     Serial.print(" -> The best\n");
+  //   else
+  //     Serial.print("\n");
+  // }
+  // else
+  //   Serial.print(" -> Not Feasible\n");
 
   if (check_feasibility(d_b0))
   {
@@ -177,18 +177,18 @@ Node& Node::consensus_iterate()
   std::map<int, double> d_b1 = d_u;
   d_b1[this->index] = 100;
 
-  Serial.print("d_b1 = ");
-  print_map2(d_b1);
-  if (check_feasibility(d_b1)) {
-    Serial.print(" -> Feasible");
-    Serial.printf(" -> cost = %lf", evaluate_cost(d_b1));
-    if (evaluate_cost(d_b1) < cost_best)
-      Serial.print(" -> The best\n");
-    else
-      Serial.print("\n");
-  }
-  else
-    Serial.print(" -> Not Feasible\n");
+  // Serial.print("d_b1 = ");
+  // print_map2(d_b1);
+  // if (check_feasibility(d_b1)) {
+  //   Serial.print(" -> Feasible");
+  //   Serial.printf(" -> cost = %lf", evaluate_cost(d_b1));
+  //   if (evaluate_cost(d_b1) < cost_best)
+  //     Serial.print(" -> The best\n");
+  //   else
+  //     Serial.print("\n");
+  // }
+  // else
+  //   Serial.print(" -> Not Feasible\n");
     
   if (check_feasibility(d_b1))
   {
@@ -206,18 +206,18 @@ Node& Node::consensus_iterate()
     d_l0[item.first] = 1 / this->rho * z[item.first] - 1 / this->m * item.second.k * (this->o - this->L) + 1 / this->rho / this->m * item.second.k * (this->node_info[this->index].k * z[this->index] - z_dot_k);  
   d_l0[this->index] = 0;
 
-  Serial.print("d_l0 = ");
-  print_map2(d_l0);
-  if (check_feasibility(d_l0)) {
-    Serial.print(" -> Feasible");
-    Serial.printf(" -> cost = %lf", evaluate_cost(d_l0));
-    if (evaluate_cost(d_l0) < cost_best)
-      Serial.print(" -> The best\n");
-    else
-      Serial.print("\n");
-  }
-  else
-    Serial.print(" -> Not Feasible\n");
+  // Serial.print("d_l0 = ");
+  // print_map2(d_l0);
+  // if (check_feasibility(d_l0)) {
+  //   Serial.print(" -> Feasible");
+  //   Serial.printf(" -> cost = %lf", evaluate_cost(d_l0));
+  //   if (evaluate_cost(d_l0) < cost_best)
+  //     Serial.print(" -> The best\n");
+  //   else
+  //     Serial.print("\n");
+  // }
+  // else
+  //   Serial.print(" -> Not Feasible\n");
 
   if (check_feasibility(d_l0))
   {
@@ -235,18 +235,18 @@ Node& Node::consensus_iterate()
     d_l1[item.first] = 1 / this->rho * z[item.first] - 1 / this->m * item.second.k * (this->o - this->L + 100 * this->node_info[this->index].k) + 1 / this->rho / this->m * item.second.k * (this->node_info[this->index].k * z[this->index] - z_dot_k);
   d_l1[this->index] = 100;
 
-  Serial.print("d_l1 = ");
-  print_map2(d_l1);
-  if (check_feasibility(d_l1)) {
-    Serial.print(" -> Feasible");
-    Serial.printf(" -> cost = %lf", evaluate_cost(d_l1));
-    if (evaluate_cost(d_l1) < cost_best)
-      Serial.print(" -> The best\n");
-    else
-      Serial.print("\n");
-  }
-  else
-    Serial.print(" -> Not Feasible\n");
+  // Serial.print("d_l1 = ");
+  // print_map2(d_l1);
+  // if (check_feasibility(d_l1)) {
+  //   Serial.print(" -> Feasible");
+  //   Serial.printf(" -> cost = %lf", evaluate_cost(d_l1));
+  //   if (evaluate_cost(d_l1) < cost_best)
+  //     Serial.print(" -> The best\n");
+  //   else
+  //     Serial.print("\n");
+  // }
+  // else
+  //   Serial.print(" -> Not Feasible\n");
     
   if (check_feasibility(d_l1))
   {

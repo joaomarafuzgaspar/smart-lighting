@@ -17,7 +17,7 @@ public:
 
   void set_node();
 
-  void initialization(const std::map<int, double>& coupling_gains, double lux_value, double duty_cycle, int LUMINAIRE);
+  void initialization(const std::map<int, double>& coupling_gains, int LUMINAIRE);
   bool check_feasibility(const std::map<int, double>& d) const;
   double evaluate_cost(const std::map<int, double>& d) const; 
   Node& consensus_iterate();
