@@ -1,13 +1,6 @@
 """
-File: compiler_uploader.py
-Description: This script compiles and uploads an Arduino program to a Raspberry Pi Pico microcontroller board using the Arduino CLI. 
+Description: This script compiles and uploads an Arduino program to a Raspberry Pi Pico microcontroller board using the Arduino CLI.
 The script automates the process of deploying code to the Pico, making it easier for developers to test and run their programs on the board.
-
-Authors:
-- Francisco Rodrigues (96210) <francisco.rodrigues.09@tecnico.ulisboa.pt>
-- João Marafuz Gaspar (96240) <joao.marafuz.gaspar@tecnico.ulisboa.pt>
-
-Date: 11/04/2023
 """
 
 import os
