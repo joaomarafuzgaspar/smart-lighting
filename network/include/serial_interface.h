@@ -1,37 +1,18 @@
 #ifndef SERIAL_INTERFACE_H
 #define SERIAL_INTERFACE_H
 
+#define MAX_READ_MESSAGES_SIZE 6000
+
 #include <list>
 #include <sstream>
 #include <vector>
 #include <boost/asio.hpp>
 #include "base_session.h"
-
-void custom_print_string(const std::string& s)
-{
-    for (auto chr : s) {
-        switch (chr) {
-            case '\n':
-                std::cout << "\\n";
-                break;
-            case '\r':
-                std::cout << "\\r";
-                break;
-            default:
-                std::cout << chr;
-                break;
-        }
-    }
-}
-
-bool starts_with(const std::string& str, const std::string& prefix)
-{
-    return str.substr(0, prefix.size()) == prefix;
-}
+#include "utils.h"
 
 class SerialInterface {
 public:
-    SerialInterface(boost::asio::io_context& ctx, const std::string& port, unsigned int baudrate)
+    SerialInterface(boost::asio::io_context& ctx, const std::string& port, unsigned long baudrate)
         : serial_port {ctx, port}
     {
         buffer.resize(1024);
@@ -141,6 +122,9 @@ private:
                         temp = received.substr(0, loc);
                         ss << temp;
                         read_messages.push_back(ss.str());
+                        if (read_messages.size() > MAX_READ_MESSAGES_SIZE)
+                            read_messages.pop_front();
+                        std::cout << "[SERIAL_IN] " << (RawString) ss.str() << std::endl;
                         ss.str("");
                         received = received.substr(loc+2-alternative);
                         if (!alternative)
@@ -159,6 +143,7 @@ private:
     void do_write()
     {
         boost::asio::async_write(serial_port, boost::asio::buffer(write_messages.front().data(), write_messages.front().length()), [this](boost::system::error_code ec, std::size_t) {
+            std::cout << "[SERIAL_OUT] " << (RawString) write_messages.front() << std::endl;
             write_messages.pop_front();
         });
 

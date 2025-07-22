@@ -2,7 +2,7 @@
 BINDIR := bin
 LIBDIR := lib
 
-CC := g++ -std=c++11 -pedantic -Wall -ggdb
+CC := g++ -std=c++17 -pedantic -Wall -ggdb
 
 VPATH = main:src
 

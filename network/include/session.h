@@ -4,6 +4,7 @@
 #include <optional>
 #include "base_session.h"
 #include "serial_interface.h"
+#include "utils.h"
 
 class SCDTRSession : public Session {
 public:
@@ -20,7 +21,8 @@ public:
     {
         auto maybe_message = serial_interface->pop_message(id);
         if (maybe_message.has_value()) {
-            messages.push_back(maybe_message.value());
+            messages.push_back(maybe_message.value() + '\n');
+            std::cout << "[SESSION_" << id << "_OUT] " << (RawString) maybe_message.value() << std::endl;
             do_write();
         }
     }
@@ -31,6 +33,7 @@ protected:
 
     std::optional<std::string> on_read(const std::string& buf)
     {
+        std::cout << "[SESSION_" << id << "_IN] " << (RawString) buf << std::endl;
         serial_interface->enqueue_write(buf, id);
         return std::nullopt;
     }
