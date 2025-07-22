@@ -1,6 +1,7 @@
 #ifndef SESSION_H
 #define SESSION_H
 
+#include <optional>
 #include "base_session.h"
 #include "serial_interface.h"
 
@@ -12,25 +13,26 @@ public:
     {
         serial_interface = si;
         this->id = id;
+        si->register_reader(shared_from_this());
+    }
+
+    void do_user_defined_task()
+    {
+        auto maybe_message = serial_interface->pop_message(id);
+        if (maybe_message.has_value()) {
+            messages.push_back(maybe_message.value());
+            do_write();
+        }
     }
 
 protected:
     SerialInterface *serial_interface;
     unsigned short id;
 
-    std::string on_read(const std::string& buf)
+    std::optional<std::string> on_read(const std::string& buf)
     {
         serial_interface->enqueue_write(buf, id);
-        return "Received\n";
-    }
-
-    void do_user_defined_task()
-    {
-        auto maybe_message = serial_interface->pop_message(id);
-        if (maybe_message.length() > 0) {
-            std::cout << "Got message" << std::endl;
-            messages.push_back(maybe_message);
-        }
+        return std::nullopt;
     }
 };
 
