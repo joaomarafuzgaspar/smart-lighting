@@ -6,7 +6,7 @@
 
 class Session : public std::enable_shared_from_this<Session> {
 public:
-    Session(boost::asio::ip::tcp::socket socket) : socket(std::move(socket)) {}
+    Session(boost::asio::io_context& io_context, boost::asio::ip::tcp::socket socket) : ctx {io_context}, socket(std::move(socket)) {}
 
     void start()
     {
@@ -14,7 +14,11 @@ public:
     }
 
 protected:
-    virtual std::string on_read(char buf[1024]) = 0;
+    boost::asio::io_context &ctx;
+    std::deque<std::string> messages;
+
+    virtual std::string on_read(const std::string&) = 0;
+    virtual void do_user_defined_task() = 0;
 
 private:
     void do_read()
@@ -25,16 +29,18 @@ private:
                 data_[length] = '\0';
                 std::string response = on_read(data_);
                 if (response.length() > 0) {
-                    for (int i = 0; i < (response.length() - 1) / max_length + 1; i++) {
+                    for (size_t i = 0; i < (response.length() - 1) / max_length + 1; i++) {
                         size_t end = max_length*(i+1) < response.length() ? max_length*(i+1) : response.length();
                         size_t sz = end - max_length*i;
                         messages.push_back(response.substr(max_length*i, sz));
                     }
                 }
+                do_user_defined_task();
                 if (!messages.empty())
                     do_write();
-                else
+                else {
                     do_read();
+                }
             }
         });
     }
@@ -45,9 +51,8 @@ private:
         boost::asio::async_write(socket, boost::asio::buffer(messages.front().data(), messages.front().length()), [this, self](boost::system::error_code ec, std::size_t) {
             if (!ec) {
                 messages.pop_front();
-                if (!messages.empty()) {
+                if (!messages.empty())
                     do_write();
-                }
                 else
                     do_read();
             }
@@ -55,7 +60,6 @@ private:
     }
 
     boost::asio::ip::tcp::socket socket;
-    std::deque<std::string> messages;
     enum { max_length = 1024 };
     char data_[max_length];
 };

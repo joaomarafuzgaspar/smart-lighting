@@ -21,12 +21,12 @@ public:
 
     std::string get_message()
     {
-        return messages.back();
+        return read_messages.back();
     }
 
-    std::string get_message(uint8_t id)
+    std::string get_message(unsigned short id)
     {
-        for (auto i = messages.begin(); i != messages.end(); i++) {
+        for (auto i = read_messages.begin(); i != read_messages.end(); i++) {
             if (starts_with(*i, std::to_string(id))) 
                 return *i;
         }
@@ -35,51 +35,80 @@ public:
 
     std::string pop_message()
     {
-        std::string result = messages.back();
-        messages.pop_back();
+        std::string result = read_messages.back();
+        read_messages.pop_back();
         return result;
     }
 
-    std::string pop_message(uint8_t id)
+    std::string pop_message(unsigned short id)
     {
         std::string result {};
-        for (auto i = messages.begin(); i != messages.end(); i++) {
-            if (starts_with(*i, std::to_string(id))) {
-                result = *i;
-                messages.erase(i);
+        std::string prefix {std::to_string(id)};
+        prefix += " ";
+        for (auto i = read_messages.begin(); i != read_messages.end(); i++) {
+            if (starts_with(*i, prefix)) {
+                result = i->substr(prefix.length());
+                read_messages.erase(i);
                 break;
             }
         }
         return result;
     }
 
+    void enqueue_write(const std::string& msg)
+    {
+        write_messages.push_back(msg);
+    }
+
+    void enqueue_write(const std::string& msg, unsigned short id)
+    {
+        std::stringstream builder;
+        builder << id << " " << msg;
+        write_messages.push_back(builder.str());
+    }
+
 private:
     boost::asio::serial_port serial_port;
-    std::list<std::string> messages;
+    std::list<std::string> read_messages {};
+    std::list<std::string> write_messages {};
     std::stringstream ss;
     char buffer[1024];
 
     void do_read()
     {
-        std::cout << "Do read!" << std::endl;
         serial_port.async_read_some(boost::asio::buffer(buffer, sizeof(buffer)-1), [this](boost::system::error_code ec, std::size_t length) {
-            std::cout << "Code: " << ec.message() << std::endl;
             if (!ec) {
                 buffer[length] = '\0';
                 std::string received {buffer}, temp;
-                std::cout << "Received: " << received << std::endl;
-                std::size_t loc = received.find('\n');
+                std::size_t loc = received.find("\r\n");
                 while (loc != std::string::npos) {
                     temp = received.substr(0, loc);
                     ss << temp;
-                    messages.push_back(ss.str());
+                    read_messages.push_back(ss.str());
+                    std::cout << "Added to messages: '" << read_messages.back() << "'" << std::endl;
                     ss.str("");
-                    received = temp;
-                    loc = received.find('\n');
+                    received = received.substr(loc+2);
+                    loc = received.find("\r\n");
                 }
                 ss << received;
             }
-            do_read();
+            if (!write_messages.empty())
+                do_write();
+            else
+                do_read();
+        });
+    }
+
+    void do_write()
+    {
+        serial_port.async_write_some(boost::asio::buffer(write_messages.front().data(), write_messages.front().length()), [this](boost::system::error_code ec, std::size_t) {
+            if (!ec) {
+                write_messages.pop_front();
+                if (!write_messages.empty())
+                    do_write();
+                else
+                    do_read();
+            }
         });
     }
 };

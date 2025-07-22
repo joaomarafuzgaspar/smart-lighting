@@ -8,17 +8,29 @@ class SCDTRSession : public Session {
 public:
     using Session::Session;
 
-    void bind_serial_interface(SerialInterface *si)
+    void bind_serial_interface(SerialInterface *si, unsigned short id)
     {
         serial_interface = si;
+        this->id = id;
     }
 
 protected:
     SerialInterface *serial_interface;
+    unsigned short id;
 
-    std::string on_read(char buf[1024])
+    std::string on_read(const std::string& buf)
     {
-        return "Test\n";
+        serial_interface->enqueue_write(buf, id);
+        return "Received\n";
+    }
+
+    void do_user_defined_task()
+    {
+        auto maybe_message = serial_interface->pop_message(id);
+        if (maybe_message.length() > 0) {
+            std::cout << "Got message" << std::endl;
+            messages.push_back(maybe_message);
+        }
     }
 };
 

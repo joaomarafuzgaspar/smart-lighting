@@ -8,14 +8,15 @@
 int main(int argc, char* argv[])
 {
     try {
-        if (argc != 2) {
-            std::cerr << "Usage: " << argv[0] << " <port>\n";
+        if (argc != 3) {
+            std::cerr << "Usage: " << argv[0] << " <netport> <serialport>\n";
             return 1;
         }
 
         boost::asio::io_context io_context;
-        SerialInterface iterface {io_context, "/dev/ttyS10", 115200};
+        SerialInterface interface {io_context, argv[2], 115200};
         SCDTRServer s(io_context, std::atoi(argv[1]));
+        s.bind_serial_interface(&interface);
 
         io_context.run();
     }
