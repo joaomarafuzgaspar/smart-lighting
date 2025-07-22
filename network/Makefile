@@ -1,33 +1,24 @@
 # Makefile
 BINDIR := bin
-LIBDIR := lib
 
 CC := g++ -std=c++17 -pedantic -Wall -ggdb
 
-VPATH = main:src
-
 SRC := $(wildcard src/*.cpp)
-OBJ := $(patsubst %.cpp, $(BINDIR)/%.o, $(notdir $(SRC)))
-INC := $(wildcard src/*.h)
+OBJ := $(patsubst src/%.cpp, $(BINDIR)/%.o, $(SRC))
+INC := $(wildcard include/*.h)
 
-all: bin lib client server build
+all: bin client server build
 
-client: $(BINDIR)/main_client.o lib | $(INC)
-	$(CC) $< -pthread -o $(BINDIR)/client -Llib -lscdtr
+client: $(BINDIR)/main_client.o | $(INC)
+	$(CC) $< -pthread -o $(BINDIR)/client -lboost_program_options
 
-server: $(BINDIR)/main_server.o lib | $(INC)
-	$(CC) $< -pthread -o $(BINDIR)/server -Llib -lscdtr
-
-lib: $(LIBDIR)/libscdtr.a
-
-$(LIBDIR)/libscdtr.a: $(OBJ) | $(INC)
-	mkdir -p lib
-	ar rcs $@ $(OBJ)
+server: $(BINDIR)/main_server.o | $(INC)
+	$(CC) $< -pthread -o $(BINDIR)/server -lboost_program_options
 
 build: $(OBJ) | $(INC)
 
-$(BINDIR)/%.o: %.cpp | $(INC)
-	$(CC) -I src -c $< -o $@ -fPIC
+$(BINDIR)/%.o: src/%.cpp | $(INC)
+	$(CC) -I include -c $< -o $@ -fPIC
 
 .PHONY: bin
 bin:

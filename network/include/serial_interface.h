@@ -24,6 +24,10 @@ public:
         do_read();
     }
 
+    static bool is_identified_message(const std::string &message) {
+        return message.length() > 0 && message[0] >= '0' && message[0] <= '9';
+    }
+
     std::optional<std::string> get_message()
     {
         if (read_messages.size() == 0)
@@ -91,6 +95,27 @@ private:
     std::stringstream ss;
     std::vector<char> buffer;
 
+    void add_message(const std::string& message) {
+        std::vector<unsigned short> ids; 
+        size_t next = 0, last = 0;
+        std::string token;
+        while ((next = message.find(' ', last)) != std::string::npos) {
+            token = message.substr(last, next-last);
+            unsigned short id = (unsigned short) std::strtoul(token.c_str(), NULL, 10);
+            if (id == 0)
+                break;
+            ids.push_back(id);
+            last = next + 1;
+        }
+        
+        std::string message_without_ids {message.substr(last)};
+        for (unsigned short id : ids) {
+            read_messages.push_back(std::to_string(id) + " " + message_without_ids);
+            if (read_messages.size() > MAX_READ_MESSAGES_SIZE)
+                read_messages.pop_front();
+        }
+    }
+
     void notify_readers()
     {
         for (auto it = registered_readers.begin(); it != registered_readers.end();) {
@@ -121,10 +146,12 @@ private:
                     while (loc != std::string::npos) {
                         temp = received.substr(0, loc);
                         ss << temp;
-                        read_messages.push_back(ss.str());
-                        if (read_messages.size() > MAX_READ_MESSAGES_SIZE)
-                            read_messages.pop_front();
-                        std::cout << "[SERIAL_IN] " << (RawString) ss.str() << std::endl;
+
+                        std::string message {ss.str()};
+                        if (is_identified_message(message))
+                            add_message(message);
+
+                        std::cout << "[SERIAL_IN] " << (RawString) message << std::endl;
                         ss.str("");
                         received = received.substr(loc+2-alternative);
                         if (!alternative)
