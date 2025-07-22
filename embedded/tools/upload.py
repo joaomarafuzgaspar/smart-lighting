@@ -19,26 +19,53 @@ def compile_program(ino_file):
     if not os.path.exists(build_dir):
         os.mkdir(build_dir)
 
-    # Compile the program using the Arduino CLI
-    compile_cmd = [
-        "arduino-cli",
-        "compile",
-        "--fqbn",
-        "rp2040:rp2040:rpipico",
-        ino_file,
-        "--output-dir",
-        build_dir,
-    ]
-    subprocess.run(compile_cmd, check=True)
+    # Copy only the src/*.cpp files to main directory temporarily (Arduino needs them in same dir for linking)
+    copied_files = []
+    for cpp_file in glob.glob("src/*.cpp"):
+        filename = os.path.basename(cpp_file)
+        dest_path = os.path.join("main", filename)
+        if not os.path.exists(dest_path):  # Only copy if doesn't already exist
+            shutil.copy(cpp_file, dest_path)
+            copied_files.append(dest_path)
+
+    # Get absolute paths for include directories
+    current_dir = os.getcwd()
+    include_dir = os.path.join(current_dir, "include")
+    src_dir = os.path.join(current_dir, "src")
+
+    try:
+        # Compile the program using the Arduino CLI with build properties
+        compile_cmd = [
+            "arduino-cli",
+            "compile",
+            "--fqbn",
+            "rp2040:rp2040:rpipico",
+            "--build-property",
+            f"compiler.cpp.extra_flags=-I{include_dir}",
+            ino_file,
+            "--output-dir",
+            build_dir,
+        ]
+        subprocess.run(compile_cmd, check=True)
+    finally:
+        # Clean up: remove the copied files
+        for file_path in copied_files:
+            if os.path.exists(file_path):
+                os.remove(file_path)
 
     # Return the path to the compiled program
-    return f"{build_dir}/sketch.ino.uf2"
+    return f"{build_dir}/main.ino.uf2"
 
 
 def find_pico_devices():
     # Find all connected Raspberry Pi Pico devices
     devices = glob.glob("/dev/tty.usbmodem*")
     return devices
+
+
+def delete_dir(dir):
+    if os.path.exists(dir):
+        shutil.rmtree(dir)
 
 
 def upload_to_pico(device):
@@ -66,6 +93,7 @@ def main():
 
     if not pico_devices:
         print("No Raspberry Pi Pico devices found.")
+        delete_dir("build")
         return
 
     # Print a message indicating which devices the program will be uploaded to
@@ -78,7 +106,7 @@ def main():
         upload_to_pico(device)
 
     # Remove the build directory after uploading
-    shutil.rmtree("build")
+    delete_dir("build")
 
 
 if __name__ == "__main__":
